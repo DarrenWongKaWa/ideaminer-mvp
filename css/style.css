@@ -4,28 +4,87 @@
  * 设计基调：
  *   - 干净的白底 + 深色文字 + 卡片式布局
  *   - max-width: 480px 居中（移动端优先）
- *   - 底部固定 nav（3 个 icon）
+ *   - 底部固定 nav（4 个 icon：探索 / 收藏 / 我的 / 设置）
  *   - 反馈按钮用 pill 形圆角
+ *
+ * 间距系统：4 / 8 / 16 / 24 / 32 px（见 --sp-1..--sp-5）
+ * 动效曲线：200ms cubic-bezier(0.4, 0, 0.2, 1)
+ * 深色模式：所有颜色都封装在 :root 变量里，后续启用 @media (prefers-color-scheme: dark)
+ *          只需重定义一组 token 即可。
  * ================================================================== */
 
+/* ------------------------------------------------------------------
+ * 1) Design tokens（颜色 / 间距 / 圆角 / 阴影 / 动效）
+ * ------------------------------------------------------------------ */
 :root {
+  /* —— 品牌色 —— */
+  --brand: #5b8def;
+  --brand-soft: #e9f0ff;
+  --brand-strong: #3a72dc;
+
+  /* —— 表面 / 背景 —— */
   --bg: #ffffff;
   --bg-subtle: #f7f7f8;
+  --bg-elevated: #ffffff;
+
+  /* —— 文字 —— */
   --fg: #1a1a1a;
   --fg-muted: #6e6e73;
   --fg-faint: #9a9a9f;
+  --fg-on-brand: #ffffff;
+
+  /* —— 边框 / 分割线 —— */
   --border: #e5e5ea;
-  --accent: #ff3b30;
+  --border-strong: #d6d6db;
+
+  /* —— 语义色 —— */
+  --danger: #ff3b30;
+  --danger-soft: #ffe1de;
+  --warning: #b8851a;
+  --warning-soft: #fff7e6;
+  --success: #1aa260;
+  --success-soft: #e7f7ee;
+
+  /* —— 按钮 —— */
   --primary: #1a1a1a;
   --primary-fg: #ffffff;
+
+  /* —— 阴影 —— */
   --shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+  --shadow-hover: 0 10px 28px rgba(0, 0, 0, 0.10);
+
+  /* —— 圆角 —— */
   --radius: 12px;
   --radius-sm: 8px;
-  --gap: 16px;
-  --gap-lg: 24px;
+  --radius-pill: 999px;
+
+  /* —— 间距 —— */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 16px;
+  --sp-4: 24px;
+  --sp-5: 32px;
+
+  /* —— gap 兼容老变量名 —— */
+  --gap: var(--sp-3);
+  --gap-lg: var(--sp-4);
+
+  /* —— 底部 nav 高度（包含 iPhone safe area） —— */
   --nav-h: 64px;
+
+  /* —— 动效 —— */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 150ms;
+  --dur: 200ms;
+  --dur-slow: 320ms;
+
+  /* —— 焦点环 —— */
+  --focus-ring: 0 0 0 3px rgba(91, 141, 239, 0.32);
 }
 
+/* ------------------------------------------------------------------
+ * 2) Reset / base
+ * ------------------------------------------------------------------ */
 * {
   box-sizing: border-box;
 }
@@ -40,11 +99,19 @@ html, body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 a {
-  color: inherit;
+  color: var(--brand);
   text-decoration: none;
+  transition: color var(--dur) var(--ease), text-decoration-color var(--dur) var(--ease);
+}
+
+a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--brand);
 }
 
 button {
@@ -56,20 +123,38 @@ input, select, button {
   font-family: inherit;
 }
 
-/* ============== 应用容器（移动端居中） ============== */
+/* 全局焦点环（键盘可达） */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ------------------------------------------------------------------
+ * 3) 应用容器（移动端居中）
+ * ------------------------------------------------------------------ */
 #app {
   min-height: 100vh;
-  padding-bottom: calc(var(--nav-h) + 24px);
+  padding-bottom: calc(var(--nav-h) + var(--sp-4));
 }
 
 .page {
   max-width: 480px;
   margin: 0 auto;
-  padding: 24px 20px 16px;
+  padding: var(--sp-4) var(--sp-3) var(--sp-3);
+  animation: pageFadeIn var(--dur) var(--ease) both;
 }
 
-.page--saved, .page--explore, .page--my {
-  padding-bottom: calc(var(--nav-h) + 24px);
+.page--saved, .page--explore, .page--my, .page--settings {
+  padding-bottom: calc(var(--nav-h) + var(--sp-4));
+}
+
+@keyframes pageFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .page__header {
@@ -80,7 +165,7 @@ input, select, button {
   font-size: 28px;
   font-weight: 700;
   letter-spacing: -0.5px;
-  margin: 0 0 6px;
+  margin: 0 0 var(--sp-2);
   color: var(--fg);
 }
 
@@ -90,7 +175,9 @@ input, select, button {
   margin: 0;
 }
 
-/* ============== 表单 ============== */
+/* ------------------------------------------------------------------
+ * 4) 表单
+ * ------------------------------------------------------------------ */
 .form {
   display: flex;
   flex-direction: column;
@@ -100,13 +187,23 @@ input, select, button {
 .form__field {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-2);
+  position: relative;
 }
 
 .form__label {
   font-size: 13px;
   font-weight: 600;
   color: var(--fg);
+  transition: color var(--dur) var(--ease), transform var(--dur) var(--ease);
+  transform-origin: left top;
+  display: inline-block;
+}
+
+/* 焦点时 label 上浮 + 变 brand 色（float-emphasize） */
+.form__field:focus-within .form__label {
+  color: var(--brand);
+  transform: translateY(-2px);
 }
 
 .form__input-wrap {
@@ -118,33 +215,49 @@ input, select, button {
 .form__input {
   width: 100%;
   height: 48px;
-  padding: 0 44px 0 16px;
+  padding: 0 44px 0 var(--sp-3);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--fg);
   font-size: 15px;
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color var(--dur) var(--ease),
+              box-shadow var(--dur) var(--ease),
+              background var(--dur) var(--ease);
   appearance: none;
   -webkit-appearance: none;
 }
 
-.form__input:focus {
-  border-color: var(--fg);
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.04);
+.form__input:hover {
+  border-color: var(--border-strong);
+}
+
+.form__input:focus,
+.form__input:focus-visible {
+  border-color: var(--brand);
+  box-shadow: var(--focus-ring);
+  outline: none;
+}
+
+textarea.form__input {
+  height: auto;
+  min-height: 96px;
+  padding: 12px var(--sp-3);
+  resize: vertical;
+  line-height: 1.5;
 }
 
 select.form__input {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' stroke='%231a1a1a' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
   background-repeat: no-repeat;
-  background-position: right 16px center;
-  padding-right: 36px;
+  background-position: right var(--sp-3) center;
+  padding-right: calc(var(--sp-3) + 20px);
 }
 
 .form__mic {
   position: absolute;
-  right: 8px;
+  right: var(--sp-2);
   top: 50%;
   transform: translateY(-50%);
   width: 32px;
@@ -157,50 +270,103 @@ select.form__input {
   justify-content: center;
   cursor: pointer;
   font-size: 18px;
-  transition: background 0.15s ease;
+  transition: background var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
 
 .form__mic:hover {
   background: var(--bg-subtle);
 }
 
+.form__mic:active {
+  transform: translateY(-50%) scale(0.94);
+}
+
 .form__mic.is-recording {
-  background: var(--accent);
-  color: white;
-  animation: pulse 1.2s infinite;
+  background: var(--danger);
+  color: var(--fg-on-brand);
+  animation: pulseRecording 1.2s var(--ease) infinite;
+  box-shadow: 0 0 0 4px rgba(255, 59, 48, 0.18);
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+@keyframes pulseRecording {
+  0%, 100% {
+    transform: translateY(-50%) scale(1);
+    box-shadow: 0 0 0 4px rgba(255, 59, 48, 0.18);
+  }
+  50% {
+    transform: translateY(-50%) scale(1.08);
+    box-shadow: 0 0 0 8px rgba(255, 59, 48, 0.05);
+  }
 }
 
-/* ============== 按钮 ============== */
+/* 5-dot 可视化器（仅 CSS 动画，挂在 mic 旁） */
+.voice-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: var(--sp-2);
+  vertical-align: middle;
+}
+.voice-dots__dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--danger);
+  opacity: 0.4;
+  animation: voiceDot 1s var(--ease) infinite;
+}
+.voice-dots__dot:nth-child(2) { animation-delay: 0.15s; }
+.voice-dots__dot:nth-child(3) { animation-delay: 0.30s; }
+.voice-dots__dot:nth-child(4) { animation-delay: 0.45s; }
+.voice-dots__dot:nth-child(5) { animation-delay: 0.60s; }
+
+@keyframes voiceDot {
+  0%, 100% { opacity: 0.3; transform: translateY(0); }
+  50%      { opacity: 1;   transform: translateY(-3px); }
+}
+
+/* ------------------------------------------------------------------
+ * 5) 按钮
+ * ------------------------------------------------------------------ */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: var(--sp-2);
   height: 48px;
-  padding: 0 20px;
+  padding: 0 var(--sp-4);
   border: 1px solid transparent;
   border-radius: var(--radius);
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.15s ease, transform 0.05s ease, background 0.15s ease;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--dur) var(--ease),
+              color var(--dur) var(--ease),
+              border-color var(--dur) var(--ease),
+              transform var(--dur-fast) var(--ease),
+              opacity var(--dur) var(--ease),
+              box-shadow var(--dur) var(--ease);
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
 }
 
 .btn:active {
-  transform: scale(0.98);
+  transform: scale(0.96);
 }
 
 .btn--primary {
-  background: var(--primary);
-  color: var(--primary-fg);
+  background: var(--brand);
+  color: var(--fg-on-brand);
 }
 
 .btn--primary:hover {
-  opacity: 0.9;
+  background: var(--brand-strong);
+  box-shadow: 0 6px 16px rgba(91, 141, 239, 0.32);
 }
 
 .btn--ghost {
@@ -209,47 +375,96 @@ select.form__input {
   border-color: var(--border);
   height: 36px;
   font-size: 14px;
-  padding: 0 14px;
+  padding: 0 var(--sp-3);
 }
 
 .btn--ghost:hover {
   background: var(--bg-subtle);
+  border-color: var(--border-strong);
+  box-shadow: none;
+  transform: none;
+}
+
+.btn--ghost:active {
+  transform: scale(0.96);
+}
+
+.btn--danger {
+  background: var(--danger);
+  color: var(--fg-on-brand);
 }
 
 .btn[disabled] {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
-/* ============== 卡片 ============== */
+/* ------------------------------------------------------------------
+ * 6) 卡片（idea card）
+ * ------------------------------------------------------------------ */
 .card {
   background: var(--bg);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: var(--gap-lg);
   margin-bottom: var(--gap-lg);
+  transition: transform var(--dur) var(--ease),
+              box-shadow var(--dur) var(--ease);
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
 }
 
 .card--loading {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  padding: 48px 24px;
-  text-align: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+}
+
+.card__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.skeleton-bar {
+  display: block;
+  height: 12px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg,
+    rgba(0, 0, 0, 0.04) 0%,
+    rgba(0, 0, 0, 0.10) 50%,
+    rgba(0, 0, 0, 0.04) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+.skeleton-bar--lg { height: 18px; width: 80%; }
+.skeleton-bar--md { height: 12px; width: 60%; }
+.skeleton-bar--sm { height: 10px; width: 40%; }
+
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
 }
 
 .card__loading-text {
   color: var(--fg-muted);
-  font-size: 14px;
+  font-size: 13px;
   margin: 0;
+  text-align: center;
 }
 
 .card__question {
   font-size: 19px;
   font-weight: 700;
   line-height: 1.4;
-  margin: 0 0 12px;
+  margin: 0 0 var(--sp-3);
   color: var(--fg);
   letter-spacing: -0.3px;
 }
@@ -262,7 +477,7 @@ select.form__input {
   font-size: 13px;
   font-weight: 600;
   color: var(--fg-muted);
-  margin: 0 0 6px;
+  margin: 0 0 var(--sp-2);
   letter-spacing: 0.2px;
 }
 
@@ -277,23 +492,35 @@ select.form__input {
 .card__badges {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin: 8px 0 4px;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0 var(--sp-1);
 }
 
 .badge {
   display: inline-block;
   padding: 4px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 12px;
   font-weight: 500;
   background: var(--bg-subtle);
   color: var(--fg-muted);
+  transition: background var(--dur) var(--ease);
 }
 
-.badge--innovation { background: #fff1f0; color: #c4322b; }
-.badge--feasibility { background: #f0f8ff; color: #1e6fbe; }
-.badge--importance { background: #fff7e6; color: #b8851a; }
+.badge--innovation {
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+}
+
+.badge--feasibility {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.badge--importance {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
 
 /* methods */
 .methods {
@@ -305,7 +532,7 @@ select.form__input {
 
 .methods__item {
   position: relative;
-  padding: 6px 0 6px 28px;
+  padding: var(--sp-2) 0 var(--sp-2) 28px;
   font-size: 14.5px;
   color: #333;
   line-height: 1.6;
@@ -320,8 +547,8 @@ select.form__input {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--bg-subtle);
-  color: var(--fg-muted);
+  background: var(--brand-soft);
+  color: var(--brand-strong);
   font-size: 11px;
   font-weight: 600;
   display: inline-flex;
@@ -329,54 +556,70 @@ select.form__input {
   justify-content: center;
 }
 
-/* ============== 反馈按钮 ============== */
+/* ------------------------------------------------------------------
+ * 7) 反馈按钮
+ * ------------------------------------------------------------------ */
 .feedback {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  margin-top: 24px;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
 }
 
 .feedback__btn {
   height: 40px;
   border: 1px solid var(--border);
   background: var(--bg);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 13px;
   font-weight: 500;
   color: var(--fg);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background var(--dur) var(--ease),
+              border-color var(--dur) var(--ease),
+              color var(--dur) var(--ease),
+              transform var(--dur-fast) var(--ease),
+              box-shadow var(--dur) var(--ease);
   white-space: nowrap;
 }
 
 .feedback__btn:hover {
   background: var(--bg-subtle);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.feedback__btn:active {
+  transform: scale(0.96);
 }
 
 .feedback__btn--like {
-  background: #fff1f0;
-  border-color: #ffd7d3;
-  color: #c4322b;
+  background: var(--danger-soft);
+  border-color: var(--danger-soft);
+  color: var(--danger);
 }
 
 .feedback__btn--like:hover {
-  background: #ffe1de;
+  background: #ffd7d3;
+  border-color: #ffd7d3;
 }
 
-/* ============== 底部 nav ============== */
+/* ------------------------------------------------------------------
+ * 8) 底部 nav（4 个 item：探索 / 收藏 / 我的 / 设置）
+ * ------------------------------------------------------------------ */
 .bottom-nav {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
   height: var(--nav-h);
-  background: var(--bg);
+  background: var(--bg-elevated);
   border-top: 1px solid var(--border);
   display: flex;
   align-items: stretch;
   z-index: 10;
   padding-bottom: env(safe-area-inset-bottom, 0);
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.04);
 }
 
 .bottom-nav__item {
@@ -388,23 +631,55 @@ select.form__input {
   gap: 2px;
   color: var(--fg-faint);
   font-size: 11px;
-  transition: color 0.15s ease;
+  position: relative;
+  transition: color var(--dur) var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bottom-nav__item:hover {
+  color: var(--fg-muted);
 }
 
 .bottom-nav__item.is-active {
-  color: var(--fg);
+  color: var(--brand);
+}
+
+.bottom-nav__item.is-active::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 3px;
+  background: var(--brand);
+  border-radius: var(--radius-pill);
+  animation: slideDown var(--dur) var(--ease) both;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translate(-50%, -4px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
 }
 
 .bottom-nav__icon {
   font-size: 20px;
   line-height: 1;
+  transition: transform var(--dur) var(--ease);
+}
+
+.bottom-nav__item.is-active .bottom-nav__icon {
+  transform: scale(1.12);
 }
 
 .bottom-nav__label {
   font-size: 11px;
+  font-weight: 500;
 }
 
-/* ============== Saved cards ============== */
+/* ------------------------------------------------------------------
+ * 9) Saved / My cards
+ * ------------------------------------------------------------------ */
 .cards {
   display: flex;
   flex-direction: column;
@@ -414,30 +689,51 @@ select.form__input {
 .card--saved .card__excerpt {
   color: var(--fg-muted);
   font-size: 13.5px;
-  margin: 0 0 12px;
+  margin: 0 0 var(--sp-3);
 }
 
 .card__meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  margin-top: 4px;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
 }
 
 .card__meta .btn--ghost {
   margin-left: auto;
 }
 
-/* ============== Empty state ============== */
+/* ------------------------------------------------------------------
+ * 10) Empty state（图标 + 标题 + 副文 + CTA）
+ * ------------------------------------------------------------------ */
 .empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
   text-align: center;
-  padding: 48px 16px;
+  padding: var(--sp-5) var(--sp-3);
   color: var(--fg-muted);
 }
 
-.empty p {
-  margin: 0 0 8px;
+.empty__icon {
+  font-size: 48px;
+  line-height: 1;
+  margin-bottom: var(--sp-2);
+  opacity: 0.85;
+}
+
+.empty__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fg);
+  margin: 0;
+}
+
+.empty__body {
+  font-size: 14px;
+  margin: 0;
 }
 
 .empty__sub {
@@ -445,19 +741,31 @@ select.form__input {
   color: var(--fg-faint);
 }
 
-.link {
-  color: var(--fg);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+.empty__cta {
+  margin-top: var(--sp-3);
 }
 
-/* ============== My page kv list ============== */
+.link {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: transparent;
+  transition: text-decoration-color var(--dur) var(--ease);
+}
+
+.link:hover {
+  text-decoration-color: var(--brand);
+}
+
+/* ------------------------------------------------------------------
+ * 11) My page kv list
+ * ------------------------------------------------------------------ */
 .kv {
-  margin: 0 0 16px;
+  margin: 0 0 var(--sp-3);
   display: grid;
   grid-template-columns: max-content 1fr;
-  column-gap: 16px;
-  row-gap: 6px;
+  column-gap: var(--sp-3);
+  row-gap: var(--sp-2);
   font-size: 14px;
 }
 
@@ -470,23 +778,31 @@ select.form__input {
   color: var(--fg);
 }
 
-/* ============== Toast ============== */
+/* ------------------------------------------------------------------
+ * 12) Toast（滑入动画 + emoji icon）
+ * ------------------------------------------------------------------ */
 .toast {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--nav-h) + 24px);
-  transform: translateX(-50%) translateY(8px);
-  background: rgba(0, 0, 0, 0.86);
-  color: white;
+  bottom: calc(var(--nav-h) + var(--sp-4));
+  transform: translateX(-50%) translateY(16px);
+  background: rgba(20, 20, 24, 0.92);
+  color: var(--fg-on-brand);
   font-size: 13px;
-  padding: 8px 16px;
-  border-radius: 999px;
+  font-weight: 500;
+  padding: 10px 18px;
+  border-radius: var(--radius-pill);
   opacity: 0;
   pointer-events: none;
   z-index: 100;
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transition: opacity var(--dur) var(--ease),
+              transform var(--dur) var(--ease);
   max-width: 80vw;
   text-align: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.20);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
 }
 
 .toast--show {
@@ -494,21 +810,129 @@ select.form__input {
   transform: translateX(-50%) translateY(0);
 }
 
-/* ============== Spinner ============== */
+.toast__icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.toast--success { background: rgba(26, 162, 96, 0.95); }
+.toast--error   { background: rgba(255, 59, 48, 0.95); }
+.toast--warn    { background: rgba(184, 133, 26, 0.95); }
+
+/* ------------------------------------------------------------------
+ * 13) Settings page（额外分组 / 单选 / 输入）
+ * ------------------------------------------------------------------ */
+.settings__section {
+  margin-bottom: var(--sp-5);
+}
+
+.settings__section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  margin: 0 0 var(--sp-2);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.settings__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.settings__option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease),
+              background var(--dur) var(--ease),
+              box-shadow var(--dur) var(--ease);
+}
+
+.settings__option:hover {
+  border-color: var(--border-strong);
+}
+
+.settings__option input[type="radio"] {
+  margin-top: 4px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+.settings__option.is-selected {
+  border-color: var(--brand);
+  box-shadow: var(--focus-ring);
+}
+
+.settings__option-label {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.settings__option-desc {
+  display: block;
+  font-size: 13px;
+  color: var(--fg-muted);
+  margin-top: 2px;
+}
+
+.settings__row {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.settings__row .btn {
+  flex: 1;
+}
+
+.settings__hint {
+  font-size: 12px;
+  color: var(--fg-faint);
+  margin-top: var(--sp-2);
+  line-height: 1.5;
+}
+
+.settings__provider-info {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  padding: 10px var(--sp-3);
+  background: var(--brand-soft);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--brand-strong);
+}
+
+/* ------------------------------------------------------------------
+ * 14) Spinner（保留，作为小加载器；大加载用 skeleton）
+ * ------------------------------------------------------------------ */
 .spinner {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border: 2.5px solid var(--border);
-  border-top-color: var(--fg);
+  border-top-color: var(--brand);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+  margin: 0 auto;
 }
 
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 
-/* ============== 桌面端微调：把 app 放进白色卡片式容器 ============== */
+/* ------------------------------------------------------------------
+ * 15) 桌面端微调：把 app 放进白色卡片式容器
+ * ------------------------------------------------------------------ */
 @media (min-width: 600px) {
   body {
     background: #ededf0;
@@ -525,5 +949,18 @@ select.form__input {
     left: 50%;
     transform: translateX(-50%);
     max-width: 480px;
+  }
+}
+
+/* ------------------------------------------------------------------
+ * 16) 减少动效（系统偏好）
+ * ------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }

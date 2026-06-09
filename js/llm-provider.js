@@ -1,7 +1,7 @@
 /**
  * llm-provider.js
  * ------------------------------------------------------------
- * 抽象 LLMProvider 接口 + MockLLMProvider 实现。
+ * 抽象 LLMProvider 接口 + MockLLMProvider 实现 + createProvider 工厂。
  *
  * 抽象点：
  *  - 替换为真实 LLM 时，只需 new 一个新的 LLMProvider 子类
@@ -30,8 +30,8 @@
 
 export class LLMProvider {
   /**
-   * @param {ResearchProfile} profile
-   * @param {AbortSignal} [signal]
+   * @param {ResearchProfile} _profile
+   * @param {AbortSignal} [_signal]
    * @returns {Promise<IdeaDraft>}
    */
   async generateIdea(_profile, _signal) {
@@ -112,4 +112,39 @@ export class MockLLMProvider extends LLMProvider {
       methods: Array.isArray(pick.methods) ? pick.methods.slice() : [],
     };
   }
+}
+
+/**
+ * @typedef {Object} ProviderConfig
+ * @property {'mock'|'openai'} type
+ * @property {string} [ideasPath]       mock 时使用，默认 'data/mock-ideas.json'
+ * @property {{endpoint: string, apiKey: string, model: string, temperature?: number, timeoutMs?: number}} [openai]  openai 时必填
+ */
+
+/**
+ * 根据配置构造 provider。当前支持 mock / openai。
+ *
+ * 注意：返回 Promise<LLMProvider>（openai 分支用 dynamic import，
+ * 这样 mock-only 用户不会下载 openai-llm-provider.js 的代码）。
+ *
+ * @param {ProviderConfig} config
+ * @returns {Promise<LLMProvider>}
+ */
+export function createProvider(config) {
+  const type = (config && config.type) || 'mock';
+  if (type === 'mock') {
+    const ideasPath = (config && config.ideasPath) || 'data/mock-ideas.json';
+    return Promise.resolve(new MockLLMProvider(ideasPath));
+  }
+  if (type === 'openai') {
+    if (!config.openai || !config.openai.apiKey || !config.openai.model) {
+      return Promise.reject(new Error(
+        'createProvider: openai provider requires openai.apiKey and openai.model'
+      ));
+    }
+    return import('./openai-llm-provider.js').then((m) =>
+      new m.OpenAILLMProvider(config.openai)
+    );
+  }
+  return Promise.reject(new Error(`createProvider: unknown provider type "${type}"`));
 }

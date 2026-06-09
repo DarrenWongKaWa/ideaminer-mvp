@@ -155,6 +155,292 @@
         "用 XPS 和 UPS 测量能级对齐，提取 2D/3D 异质结的 CBO/VBO",
         "在标准 AM1.5G 模拟太阳光下追踪 PCE 演化（1000 小时，85°C, 85% RH）"
       ]
+    },
+    {
+      "id": "idea-013",
+      "field": "物理学",
+      "question": "二维半导体莫尔超晶格中的关联绝缘态能否在零外磁场下被电场连续调控？",
+      "background": "魔角双层石墨烯（MATBG）与 ABC 堆垛三层石墨烯已在零磁场下观测到关联绝缘态与超导，但它们的电子密度强烈依赖于扭转角。近期实验（Nature 2023, 628, 7496）表明 WSe₂/tWSe₂ 莫尔超晶格在零磁场下表现出 Chern 绝缘体行为，可由纯电场调控。",
+      "significance": "若电场-电子密度的精细调控可以实现拓扑相图上的任意行走，将为无磁场量子反常霍尔器件提供低功耗平台，对拓扑量子比特的读出尤为关键。",
+      "methods": [
+        "制备 WSe₂/tWSe₂ 莫尔超晶格（扭转角 ~1.5°），用 PC 测定莫尔周期 L_M",
+        "用双门电压（top + bottom gate）独立调控 n 与 D（位移场），扫描二维相图",
+        "测量纵向电阻 R_xx 与 Hall 电阻 R_xy 在低温（300 mK - 4 K）下的温度依赖",
+        "对 R_xy 平台做 Středa 公式分析，提取 Chern 数与有效质量"
+      ]
+    },
+    {
+      "id": "idea-014",
+      "field": "物理学",
+      "question": "拓扑超导异质结中马约拉纳零模的 braiding 能否通过微波测量直接读取？",
+      "background": "半导体纳米线 + s 波超导 + 磁场（Oreg-Lutchyn 模型）平台近年报告了马约拉纳零模（Majorana zero mode, MZM）的隧穿谱零偏置峰。但 braiding 操作的可读出测量仍是验证非阿贝尔统计的核心难点，2024 年 Microsoft Majorana 1 芯片在该方向迈出了硬件一步。",
+      "significance": "一旦微波读出与 braiding 在单器件上同时实现，拓扑量子比特的相干时间将显著超越传统 transmon，容错阈值从 ~1% 提升到 ~10%。",
+      "methods": [
+        "在 InAs 纳米线（直径 ~80 nm）上外延生长 Al 壳层（厚度 ~10 nm）",
+        "用栅压调节化学势到拓扑相区，用隧道谱测量零偏置峰",
+        "设计 T 形结（T-junction）三端器件，并通过微波反射谱读取端点相位",
+        "对 braiding 序列做时间依赖测量，验证 fusion rule 统计"
+      ]
+    },
+    {
+      "id": "idea-015",
+      "field": "物理学",
+      "question": "暗物质直接探测的量子传感器方法能否将探测灵敏度推进到亚 GeV 质量窗口？",
+      "background": "传统暗物质探测（WIMP，>10 GeV）使用液氙、液氩闪烁体，但亚 GeV 质量窗口（轻暗物质、dark photon）需要 meV 量级的能量沉积。量子传感器（超导微波谐振器、qubit、色心）已实现单光子级能量分辨率。",
+      "significance": "若能在地下实验室（屏蔽宇宙射线）实现亚 GeV 暗物质事件探测，将覆盖迄今完全未触及的参数空间（~MeV），与天文观测形成互补。",
+      "methods": [
+        "使用超导 transmon qubit 作为传感器，标定单光子能量分辨率至 ~100 neV",
+        "把靶物质（Al 或 Si）耦合到 qubit 的谐振子，在 30 mK 温度下运行",
+        "在中国锦屏地下实验室（CJPL）安装屏蔽装置，连续运行 100 天",
+        "对能量沉积事件做事件重建，提取暗物质-核子散射截面"
+      ]
+    },
+    {
+      "id": "idea-016",
+      "field": "化学",
+      "question": "光氧化还原催化中的自由基-自由基交叉耦合能否用连续流微反应器实现规模化？",
+      "background": "光氧化还原催化（photoredox catalysis）通过可见光激发光催化剂（如 Ir[dF(CF₃)ppy]₂(dtbbpy)PF₆）产生自由基中间体，实现传统方法难以构筑的 C(sp³)-C(sp³) 键。批量反应器中自由基寿命短、选择性差，限制其放大。",
+      "significance": "若能用微反应器（通道宽度 < 500 μm）将停留时间控制在 0.1-10 s，可显著提高自由基-自由基交叉耦合的选择性（>95%），推动光催化从实验室克级放大到工业公斤级。",
+      "methods": [
+        "设计连续流微反应器（玻璃芯片，3-5 个混合通道），用蓝色 LED（450 nm）作为光源",
+        "选择模型反应：α-氨基酸脱羧后与 Michael 受体的 Giese 加成",
+        "系统改变停留时间（0.5-30 s）、光强（10-100 mW/cm²）与温度（-20 ~ 60°C）",
+        "用 ¹H-NMR 与 GC-MS 测定转化率与选择性，建立动力学模型"
+      ]
+    },
+    {
+      "id": "idea-017",
+      "field": "化学",
+      "question": "单原子催化剂（SAC）的金属-载体相互作用能否用 ML 描述符定量预测？",
+      "background": "单原子催化剂（Pt₁/Fe₂O₃、Cu₁/ZnO 等）通过 100% 原子利用率和独特的电子结构实现高选择性加氢/CO₂RR 性能。但其稳定性受金属-载体相互作用（MSI）调控，MSI 的定量描述符缺失阻碍了设计。",
+      "significance": "若能建立 MSI 的 ML 描述符（如 d 带中心、氧空位形成能、电负性差），将推动从'试错筛选'走向'按需设计'单原子催化体系。",
+      "methods": [
+        "收集 200+ 文献已报道的 SAC 体系（涵盖 10 种金属 × 20 种载体），提取 MSI 描述符",
+        "用 DFT 计算吸附能（CO、O₂、H）作为标签，训练 XGBoost / Random Forest 模型",
+        "在 50 个未见 SAC 上做外部测试，验证预测 MAE < 0.2 eV",
+        "用 SHAP 分析特征重要性，提出'MSI 三角图'设计原则"
+      ]
+    },
+    {
+      "id": "idea-018",
+      "field": "化学",
+      "question": "下一代双杂化泛函（double hybrid）能否在过渡金属激发态上同时实现化学精度与低计算成本？",
+      "background": "双杂化泛函（如 B2PLYP、ωB97X-2）通过混合 MP2 校正显著提升主族分子的能量精度，但对过渡金属（d 电子强关联）的激发态描述仍存在系统偏差，且双杂化计算成本接近 MP2。",
+      "significance": "若能开发出'range-separated 双杂化 + DFT 嵌入'的层级方法，对过渡金属 d-d 激发、MLCT 态的预测精度达到 < 0.1 eV，将使光催化设计不再依赖昂贵的 CASPT2。",
+      "methods": [
+        "构造 SRSH-MP2 双杂化泛函：长程用 MP2 校正、短程用 B97 交换关联",
+        "在 30 个过渡金属配合物（Fe、Ru、Ir 配合物）的 TDDFT 计算上测试",
+        "对比 CASPT2/NEVPT2 参考数据，验证激发能 MAE < 0.1 eV",
+        "将泛函嵌入到 Dalton / ORCA，评估在大体系（>500 原子）上的计算成本"
+      ]
+    },
+    {
+      "id": "idea-019",
+      "field": "生物学",
+      "question": "脑类器官（brain organoid）能否复现阿尔茨海默病早期 tau 蛋白病理传播？",
+      "background": "脑类器官（hPSC 衍生的 3D 神经组织）能在体外重现人类大脑皮层的分层结构与神经网络活动，已成为神经退行性疾病建模的有力工具。阿尔茨海默病（AD）中 tau 蛋白沿神经环路传播的早期事件仍难以在动物模型中精确复现。",
+      "significance": "若类器官能复现 AD 早期 tau 病理传播，将为抗 tau 药物（如 semorinemab）提供高通量筛选平台，并支持个体化精准医疗（iPSC-类器官）。",
+      "methods": [
+        "从 APOE-ε4/4 与 APOE-ε3/3 携带者的 iPSC 培养皮层类器官（60-90 天成熟）",
+        "用 AAV-tau-P301L 转导诱导 tau 过表达，定期取样做 Western blot 与 AT8 免疫染色",
+        "通过膜片钳与多电极阵列（MEA）监测突触活动与局部场电位",
+        "用单核 RNA-seq 解析 tau 传播中各类神经元（兴奋性 / 抑制性）的反应"
+      ]
+    },
+    {
+      "id": "idea-020",
+      "field": "生物学",
+      "question": "帕金森病中 α-synuclein 蛋白聚集体的细胞间传递能否通过外泌体（exosome）实现？",
+      "background": "α-synuclein（α-syn）错误折叠形成路易小体（Lewy bodies）是帕金森病（PD）的核心病理特征。近年研究表明错误折叠的 α-syn 可在细胞间传递，触发'朊病毒样'传播，但具体机制（外泌体、隧道纳米管、膜融合）尚未定论。",
+      "significance": "若外泌体被证实为 α-syn 传播的主要载体，将为开发外泌体分泌抑制剂（如 GW4869）作为 PD 修饰治疗提供新策略。",
+      "methods": [
+        "用 SH-SY5Y 细胞系建立 α-syn A53T 突变的稳定转染细胞（donor）",
+        "用 DiI 标记 donor 外泌体，与未转染细胞（recipient）共培养",
+        "用 ELISA 测定 recipient 细胞中磷酸化 α-syn（pS129）水平",
+        "通过 CRISPR 敲除 nMase2（外泌体生物合成关键基因），验证其对传递效率的影响"
+      ]
+    },
+    {
+      "id": "idea-021",
+      "field": "生物学",
+      "question": "CRISPR 全基因组筛选能否识别结直肠癌对 KRAS 抑制剂的耐药通路？",
+      "background": "KRAS G12C/D 突变在结直肠癌（CRC）中发生率约 40%，近年 KRAS G12C 抑制剂（sotorasib、adagrasib）已获批，但耐药迅速出现且机制复杂。全基因组 CRISPR 筛选（GeCKO / Brunello 文库）是系统发现耐药通路的金标准方法。",
+      "significance": "若能识别 KRAS 抑制剂的关键耐药基因（如 RTK 上游、MAPK 反馈环路），将指导联合用药策略（如 KRAS + SHP2 抑制剂），延长临床响应时间。",
+      "methods": [
+        "在 KRAS G12C 突变 CRC 细胞系（SW837、SW1463）中使用 Brunello 文库（~80,000 sgRNA）做慢病毒转导",
+        "用 sotorasib（1 μM）处理 14 天，收集存活细胞并测序 sgRNA",
+        "用 MAGeCK 算法做富集分析，识别显著 depleted（致死）与 enriched（耐药）基因",
+        "对 top 候选基因做二次验证（CRISPR knockout + rescue 实验）"
+      ]
+    },
+    {
+      "id": "idea-022",
+      "field": "计算机科学",
+      "question": "大语言模型在 Lean 4 中自动证明 IMO 风格数学题的能力边界在哪里？",
+      "background": "DeepMind AlphaProof 与 OpenAI o3 在 2024 IMO 上达到银牌水平，但每道题需要数小时计算与多次 human feedback。形式化数学证明（Lean 4 / Coq / Isabelle）作为可验证的输出是 LLM 数学推理的理想评估平台。",
+      "significance": "若 LLM 能在 1 小时内端到端证明 IMO P1-P3 风格的题目，将使数学研究中的'形式化验证'（formalization）从手工劳动变成半自动流程，对 Langlands 等长期工程尤为关键。",
+      "methods": [
+        "收集 IMO 2010-2024 题目（约 100 道）的人工 Lean 4 证明作为训练数据（Mathlib）",
+        "用 tactic prediction transformer（TPT）训练 LLM，预测下一步 tactic",
+        "对 IMO 2024 的 P1-P6 做端到端测试，统计证明成功率与平均耗时",
+        "分析失败案例（tactic 失败 vs 思路错误），提出混合搜索 + critic 模型改进"
+      ]
+    },
+    {
+      "id": "idea-023",
+      "field": "计算机科学",
+      "question": "联邦学习（FL）框架在医疗跨机构数据训练中能否同时满足差分隐私与模型精度？",
+      "background": "医疗 AI 模型训练受 HIPAA / GDPR 约束，跨机构共享原始数据几乎不可能。联邦学习（FL）通过只共享梯度实现数据不动模型动，但梯度泄露攻击（如 DLG、GradInversion）可还原单条训练样本。差分隐私（DP）通过加噪保护隐私但降低精度。",
+      "significance": "若能在 5+ 三甲医院协作训练中实现 ε-DP（ε ≤ 8）且模型精度损失 < 3%，将为中国国家医疗 AI 基础设施建设提供隐私合规路径。",
+      "methods": [
+        "在 Flower 或 FATE 框架上部署 FedAvg + DP-SGD（per-sample gradient clipping）",
+        "选择 5 家医院的胸部 CT 数据（肺炎检测），数据分布异构（Non-IID）",
+        "扫描隐私预算 ε ∈ [1, 16]，比较模型 AUROC 损失",
+        "设计 adaptive clipping 策略，验证 ε=8 时 AUROC 损失 < 3%"
+      ]
+    },
+    {
+      "id": "idea-024",
+      "field": "计算机科学",
+      "question": "强化学习（RL）能否自主发现新型高熵合金（HEA）的成分组合？",
+      "background": "高熵合金（5+ 主元素等摩尔混合）展现出传统合金无法企及的强度-韧性平衡，但 5+ 元合金的成分空间（>10⁶ 种）远超实验可枚举。RL 通过主动学习（active learning）可在小样本下高效探索。",
+      "significance": "若 RL 能在 100 次实验内发现 5 种以上优于现有 HEA 的强度-韧性组合，将极大加速航空发动机、核电等极端环境材料的发现。",
+      "methods": [
+        "在 Calphad 热力学数据库上训练 surrogate 模型（神经网络近似 Gibbs 自由能）",
+        "用 PPO 算法在 surrogate 上做主动学习，候选实验成分",
+        "对每轮 top-5 候选做真实电弧熔炼 + 压缩测试，反馈 surrogate",
+        "在 100 次实验迭代后比较 RL 候选与随机搜索、贝叶斯优化的效率"
+      ]
+    },
+    {
+      "id": "idea-025",
+      "field": "数学",
+      "question": "高阶范畴论（∞-category theory）能否为拓扑量子场论（TQFT）提供严格公理化？",
+      "background": "TQFT（CFT、拓扑序）将物理可观测量编码为范畴论对象（fusion category、modular tensor category）。传统范畴论描述 0-、1-、2-范畴，'全可逆 TQFT'则需要 ∞-范畴与稳定同伦论的更高阶结构。",
+      "significance": "若能给 TQFT 提供严格的 ∞-范畴论公理化，将统一凝聚态拓扑序、量子引力、奇点理论三大领域的数学语言，并为拓扑量子计算提供新的可计算框架。",
+      "methods": [
+        "在 Lurie 的 Higher Topos Theory 框架下构造 n-dimensional TQFT 的 ∞-范畴",
+        "对 Reshetikhin-Turaev TQFT（基于 modular tensor category）做高阶推广",
+        "证明 cobordism hypothesis 的 ∞-范畴论版本（对 fully extended TQFT）",
+        "用 HoTT（homotopy type theory）的 Coq 形式化验证关键定理"
+      ]
+    },
+    {
+      "id": "idea-026",
+      "field": "数学",
+      "question": "后量子密码学中的格密码（lattice-based）能否在侧信道攻击下保持理论安全性？",
+      "background": "NIST 2024 年标准化 CRYSTALS-Kyber（ML-KEM）与 CRYSTALS-Dilithium（ML-DSA）为后量子密码时代奠基，但其实现易受侧信道攻击（功耗、电磁、cache-timing）。'理论安全'与'实现安全'之间的差距是 PQC 落地的关键瓶颈。",
+      "significance": "若能在 ARM Cortex-M4 上实现 ML-KEM 的 constant-time 实现（无 cache-timing 泄漏），将使 PQC 在智能卡、车载 ECU 等嵌入式场景中获得与 RSA/ECC 同等安全保证。",
+      "methods": [
+        "用 TVLA（test vector leakage assessment）方法在 ChipWhisperer-Lite 上分析参考实现",
+        "针对泄漏点（NTT 阶段、采样阶段）做 mask + shuffle 双层防御",
+        "对 masked 实现做 100 万次 trace 采集，验证 TVLA t-statistic < 4.5",
+        "测试性能开销（目标：cycle 增加 < 2x）"
+      ]
+    },
+    {
+      "id": "idea-027",
+      "field": "数学",
+      "question": "PDE 数值方法的机器学习加速（如 Physics-Informed Neural Network）能否在复杂几何上超越传统有限元？",
+      "background": "PINN（Physics-Informed Neural Network）将 PDE 残差作为损失函数训练神经网络求解 PDE，已在简单几何（矩形）上证明可行。但在复杂几何（汽车外型、机翼）上 PINN 的收敛性与精度仍未与传统 FEM/CFD 严格对比。",
+      "significance": "若 PINN 在复杂几何 + 湍流（Navier-Stokes）上达到 5% 误差且推理时间 < 1 秒，将使实时 CFD 在工业设计仿真中取代部分传统网格方法。",
+      "methods": [
+        "在汽车外型 Ahmed Body 上训练 PINN（输入 xyz + t，输出 u, v, w, p）",
+        "使用 hard boundary constraint（满足壁面无滑移）与 adaptive loss weighting",
+        "对比 OpenFOAM k-ω SST 湍流模型的稳态解，计算 L2 误差与推理时间",
+        "对模型做超参数搜索（隐层宽度、激活函数、训练轮数）"
+      ]
+    },
+    {
+      "id": "idea-028",
+      "field": "材料科学",
+      "question": "高熵氧化物（HEO）能否在室温下实现高磁熵变的磁制冷效应？",
+      "background": "传统磁制冷材料（Gd、LaFeSi）在液氦温度附近有最佳性能，限制了其在室温的应用。高熵氧化物（(La,Ce,Pr,Nd,Sm)(Fe,Mn,Co,Ni,Cu)O₃）通过化学无序引入多种磁交换耦合，可能在室温（300 K）附近实现大磁熵变。",
+      "significance": "若 HEO 在 1-5 T 磁场下实现 ΔS_M > 5 J/(kg·K)，将为无气体压缩机的固态制冷技术开辟新路径，对降低碳排放与极端环境电子器件散热尤为关键。",
+      "methods": [
+        "用固相反应合成 5 种 HEO 成分（不同过渡金属比例），XRD 验证单相",
+        "在 PPMS 中测量 2-300 K 的磁化曲线与磁热曲线（5 T 磁场）",
+        "通过 Maxwell 关系 ∂S/∂T|_H 计算等温磁熵变 ΔS_M",
+        "用中子衍射（SNS 或 CSNS）解析磁交换耦合的多尺度结构"
+      ]
+    },
+    {
+      "id": "idea-029",
+      "field": "材料科学",
+      "question": "拓扑声子材料（topological phonon）的边界态能否在 GHz 频段实现无散射声波传输？",
+      "background": "光子/电子系统中的拓扑绝缘体已在实验上实现无散射边界态输运。最近的研究将这一概念推广到声子晶体（phononic crystal），在 kHz-MHz 频段观测到拓扑边界态。GHz 频段（与 5G 通信、超声成像对应）的拓扑声子材料仍是空白。",
+      "significance": "若能在 GHz 拓扑声子材料中实现无反射的声波传输，将为片上声学滤波器、量子声学（surface acoustic wave-Qubit 耦合）提供新平台。",
+      "methods": [
+        "设计 GHz 频段声子超晶格（LiNbO₃/Sapphire 异质结），用 COMSOL 模拟 band structure",
+        "在带状几何中构造'边缘 vs 体态'的对比样品",
+        "用 Brillouin 光散射（laser Doppler vibrometer）测量声子边界态",
+        "比较直边与 zig-zag 边的传输谱，验证拓扑鲁棒性"
+      ]
+    },
+    {
+      "id": "idea-030",
+      "field": "材料科学",
+      "question": "硫化物固态电池中 Li₃PS₄ / Li 金属界面的稳定性能否通过人工 SEI 显著提升？",
+      "background": "硫化物固态电池（如 Li₆PS₅Cl 电解质）能量密度可超 400 Wh/kg，但与 Li 金属接触时界面不稳定（生成 Li₂S/Li₃P 混合相），导致界面阻抗增长与枝晶。人工 SEI（solid electrolyte interphase）是公认的关键解决路径。",
+      "significance": "若人工 SEI 可使 Li 对称电池稳定循环 > 1000 次（1 mA/cm²），硫化物全固态电池将从实验室走入电动车量产的关键阶段。",
+      "methods": [
+        "用原子层沉积（ALD）在 Li 金属表面沉积 5-20 nm Li₃N 或 LiF 薄膜",
+        "组装 Li / Li₃PS₄ / Li 对称电池，在 60°C 下做恒电流循环（0.5-2 mA/cm²）",
+        "用电化学阻抗谱（EIS）每周测量界面阻抗演化",
+        "用 XPS 与 cryo-EM 对循环后的界面做深度剖析（depth profile）"
+      ]
+    },
+    {
+      "id": "idea-031",
+      "field": "跨学科",
+      "question": "AI 驱动的自主实验室机器人（self-driving lab）能否在两周内完成钙钛矿材料的全流程筛选？",
+      "background": "AI 自主实验室（如 A-Lab、Liverpool Bot）在文献上已展示端到端的合成-表征闭环。'机器人合成 → 自动 XRD/Uv-vis → ML 引导下一步合成'的闭环能否在不牺牲质量的前提下实现数量级加速，是材料发现的关键问题。",
+      "significance": "若自主实验室能在 14 天内筛选 1000+ 钙钛矿成分并发现 5+ 新光电性能材料，将把传统 PhD 4 年的工作量压缩到 2 周，重塑材料发现范式。",
+      "methods": [
+        "集成 Chemspeed 合成机器人 + 自动 XRD/PL 表征模块，构建闭环平台",
+        "用主动学习算法（BO + GP）从 CsPb(Cl,Br,I)₃ 成分空间开始筛选",
+        "对 top 候选做手动 XRD、PL、TRPL 复验，对比自动化与人工一致性",
+        "建立'自主发现 vs 文献最佳'的对照基准"
+      ]
+    },
+    {
+      "id": "idea-032",
+      "field": "跨学科",
+      "question": "光合细菌 FMO 复合物中的量子相干性是否在室温下仍有功能意义？",
+      "background": "光合作用捕光复合物（FMO、绿硫细菌反应中心）在 2D 电子光谱中观测到长期量子相干（数百 fs ~ 几 ps），但传统观点认为室温下退相干会摧毁这种效应。一些理论工作提出'振动辅助的相干输运'可能延长有效相干时间。",
+      "significance": "若室温下的'功能量子相干'被证实，将颠覆生物学与物理学的边界认知，并为'量子生物学'（quantum biology）应用到人造捕光器件提供设计原理。",
+      "methods": [
+        "在 Chlorobaculum tepidum 中纯化 FMO 复合物，用 2D electronic spectroscopy 在 4 K - 295 K 测量",
+        "用非马尔可夫 Lindblad 主方程建模电子-振动耦合",
+        "在模型中引入环境振动模式（通过分子动力学轨迹）",
+        "对比低温与室温的相干寿命与能量传递效率，验证量子相干的功能贡献"
+      ]
+    },
+    {
+      "id": "idea-033",
+      "field": "跨学科",
+      "question": "拓扑数据分析（TDA）能否在单细胞分辨率下刻画肿瘤微环境的空间异质性？",
+      "background": "肿瘤微环境（TME）由肿瘤细胞、CAFs、免疫细胞、ECM 等多种组分组成，传统降维（PCA、UMAP）丢失空间拓扑。拓扑数据分析（TDA）通过持久同调（persistent homology）能捕捉多尺度的'环'与'空腔'结构，已用于神经科学、心血管等领域，但 TME 仍少有应用。",
+      "significance": "若 TDA 能在不依赖预定义分组的情况下揭示 TME 的拓扑特征（如免疫细胞浸润形成的'环'与'陷阱'），将为预后预测和免疫治疗响应分层提供全新生物标志物。",
+      "methods": [
+        "用 spatial transcriptomics（10x Visium HD / Stereo-seq）获取 4-6 例胰腺导管腺癌（PDAC）样本的空间表达谱",
+        "在 50 µm × 50 µm 网格上做持久同调计算（H0, H1），提取持久图（persistence diagram）",
+        "用 persistence images 把持久图编码为 CNN 可用的特征向量",
+        "用生存数据与免疫治疗响应做 Cox 回归，评估拓扑特征是否独立于传统分级"
+      ]
+    },
+    {
+      "id": "idea-034",
+      "field": "跨学科",
+      "question": "压电生物支架的力学-电学耦合能否促进脊髓损伤后的轴突再生？",
+      "background": "脊髓损伤（SCI）后形成的胶质瘢痕与抑制性微环境阻断轴突再生。压电材料（如 PVDF、BaTiO₃）能在机械应变下产生局部电场，可能模拟发育期的电生理微环境。最近 Nature Materials 2024 报道了超声驱动的压电支架可促进体外神经元分化，但体内长程轴突再生仍未验证。",
+      "significance": "若压电支架能在脊髓损伤部位提供'运动式'电刺激，将为完全性 SCI 提供非药物、非电刺激的新治疗范式，对 200 万+ 全球 SCI 患者意义重大。",
+      "methods": [
+        "用静电纺丝制备 PVDF-TrFE/明胶复合纤维支架（直径 ~500 nm，取向度 > 80%）",
+        "在大鼠 T8-T9 半切 SCI 模型中植入支架（实验组 vs 非压电对照组 vs 假手术）",
+        "用每周超声（1 MHz, 0.5 W/cm², 5 min）驱动支架产生局部电场",
+        "在 4 / 8 / 12 周做 BBB 评分、神经示踪（BDA）、电生理（CMEP/MEP）评估再生情况"
+      ]
     }
   ]
 }

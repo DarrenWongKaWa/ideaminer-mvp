@@ -4,34 +4,72 @@
  * 路由器 + 应用引导。
  *
  * 路由：
- *   #/profile  完善科研画像（form）
- *   #/explore  灵感探索（idea card + 反馈按钮）
- *   #/saved    收藏（已保存的 idea 列表）
- *   #/my       我的（profile + 反馈历史）
+ *   #/profile   完善科研画像（form）
+ *   #/explore   灵感探索（idea card + 反馈按钮）
+ *   #/saved     收藏（已保存的 idea 列表）
+ *   #/my        我的（profile + 反馈历史）
+ *   #/settings  设置（LLM provider 选择 / API 配置 / 测试）
  *
- * 扩展点（按 README 提示即可替换）：
- *   1. 把 MockLLMProvider 换成 OpenAILLMProvider（保持 .generateIdea 签名）
- *   2. 把 LocalStorageProvider 换成 ApiStorageProvider（保持 sync 接口）
- *   3. 把 MockReviewer 换成 LLM-as-judge
+ * 扩展点：
+ *   1. createProvider() 工厂可换 mock / openai
+ *   2. LocalStorageProvider 换成 ApiStorageProvider（保持 sync 接口）
+ *   3. MockReviewer 换成 LLM-as-judge
  * ------------------------------------------------------------
  */
 
-import { MockLLMProvider } from './llm-provider.js';
+import { createProvider } from './llm-provider.js';
 import { LocalStorageProvider } from './storage.js';
 import { IdeaGenerator } from './idea-generator.js';
 import { VoiceInput } from './voice.js';
 
+// ---------- LLM provider 配置（持久化） ----------
+const PROVIDER_STORAGE_KEY = 'ideaminer.provider.v1';
+
+/**
+ * @typedef {Object} ProviderSettings
+ * @property {'mock'|'openai'} type
+ * @property {string} [endpoint]
+ * @property {string} [apiKey]
+ * @property {string} [model]
+ */
+
+/**
+ * 读取并清理 provider 配置（丢掉空字段、默认 model 等）。
+ * @returns {ProviderSettings}
+ */
+function loadProviderSettings() {
+  try {
+    const raw = window.localStorage.getItem(PROVIDER_STORAGE_KEY);
+    if (!raw) return { type: 'mock' };
+    const parsed = JSON.parse(raw);
+    if (parsed && (parsed.type === 'mock' || parsed.type === 'openai')) {
+      return {
+        type: parsed.type,
+        endpoint: typeof parsed.endpoint === 'string' ? parsed.endpoint : '',
+        apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : '',
+        model: typeof parsed.model === 'string' ? parsed.model : '',
+      };
+    }
+  } catch (_) { /* fall through */ }
+  return { type: 'mock' };
+}
+
+function saveProviderSettings(cfg) {
+  try {
+    window.localStorage.setItem(PROVIDER_STORAGE_KEY, JSON.stringify(cfg));
+  } catch (_) { /* ignore quota */ }
+}
+
 // ---------- 全局状态 ----------
 const state = {
-  llm: new MockLLMProvider('data/mock-ideas.json'),
   storage: new LocalStorageProvider(),
-  generator: null,        // 初始化完成后赋值
   voice: new VoiceInput(),
-  current: null,          // 当前展示的 ReviewedIdea
-  currentAbort: null,     // 当前 IdeaGenerator.next() 的 AbortController
+  llm: null,            // 由 init() 通过 createProvider 构造
+  generator: null,      // 由 init() 构造（依赖 llm）
+  ready: false,         // init() 完成
+  current: null,        // 当前展示的 ReviewedIdea
+  currentAbort: null,   // 当前 IdeaGenerator.next() 的 AbortController
 };
-
-state.generator = new IdeaGenerator(state.llm, undefined, state.storage);
 
 // ---------- 工具：安全 HTML 字符串转义 ----------
 function esc(s) {
@@ -45,7 +83,7 @@ function esc(s) {
 
 // ---------- 工具：toast ----------
 let toastTimer = null;
-function toast(msg) {
+function toast(msg, kind) {
   let t = document.getElementById('toast');
   if (!t) {
     t = document.createElement('div');
@@ -53,10 +91,24 @@ function toast(msg) {
     t.className = 'toast';
     document.body.appendChild(t);
   }
-  t.textContent = msg;
+  // 提取 emoji 图标（消息首字符若是 emoji，作为图标单独渲染）
+  let icon = '';
+  let text = msg;
+  const emojiMatch = /^([\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}])\s*/u.exec(msg);
+  if (emojiMatch) {
+    icon = emojiMatch[1];
+    text = msg.slice(emojiMatch[0].length);
+  }
+  t.innerHTML = icon
+    ? `<span class="toast__icon" aria-hidden="true">${esc(icon)}</span><span>${esc(text)}</span>`
+    : esc(msg);
+  t.classList.remove('toast--success', 'toast--error', 'toast--warn');
+  if (kind === 'success') t.classList.add('toast--success');
+  else if (kind === 'error') t.classList.add('toast--error');
+  else if (kind === 'warn') t.classList.add('toast--warn');
   t.classList.add('toast--show');
   if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('toast--show'), 1600);
+  toastTimer = setTimeout(() => t.classList.remove('toast--show'), 1800);
 }
 
 // ---------- 工具：剪贴板 ----------
@@ -67,7 +119,6 @@ async function copyText(text) {
       return true;
     }
   } catch (_) { /* fall through */ }
-  // fallback：临时 textarea + execCommand
   try {
     const ta = document.createElement('textarea');
     ta.value = text;
@@ -83,7 +134,7 @@ async function copyText(text) {
   }
 }
 
-// ---------- 渲染：底部 nav ----------
+// ---------- 渲染：底部 nav（4 个 item：探索 / 收藏 / 我的 / 设置） ----------
 function bottomNav(active) {
   return `
     <nav class="bottom-nav" role="navigation" aria-label="主导航">
@@ -99,7 +150,23 @@ function bottomNav(active) {
         <span class="bottom-nav__icon" aria-hidden="true">👤</span>
         <span class="bottom-nav__label">我的</span>
       </a>
+      <a class="bottom-nav__item ${active === 'settings' ? 'is-active' : ''}" href="#/settings" aria-label="设置">
+        <span class="bottom-nav__icon" aria-hidden="true">⚙️</span>
+        <span class="bottom-nav__label">设置</span>
+      </a>
     </nav>
+  `;
+}
+
+// ---------- 通用空状态 ----------
+function emptyState(icon, title, body, cta) {
+  return `
+    <div class="empty">
+      <div class="empty__icon" aria-hidden="true">${esc(icon)}</div>
+      <p class="empty__title">${esc(title)}</p>
+      <p class="empty__body">${body}</p>
+      ${cta ? `<div class="empty__cta">${cta}</div>` : ''}
+    </div>
   `;
 }
 
@@ -145,6 +212,13 @@ function renderProfile() {
               <button type="button" class="form__mic" data-voice-target="direction" aria-label="语音输入研究方向">
                 <span aria-hidden="true">🎤</span>
               </button>
+              <span class="voice-dots" data-voice-dots hidden aria-hidden="true">
+                <span class="voice-dots__dot"></span>
+                <span class="voice-dots__dot"></span>
+                <span class="voice-dots__dot"></span>
+                <span class="voice-dots__dot"></span>
+                <span class="voice-dots__dot"></span>
+              </span>
             ` : ''}
           </div>
         </label>
@@ -175,9 +249,9 @@ function bindProfileEvents() {
       direction: String(fd.get('direction') || '').trim(),
       age: String(fd.get('age') || '').trim(),
     };
-    if (!profile.field) { toast('请选择学科领域'); return; }
-    if (!profile.direction) { toast('请填写研究方向'); return; }
-    if (!profile.age) { toast('请选择研究年龄'); return; }
+    if (!profile.field) { toast('⚠️ 请选择学科领域', 'warn'); return; }
+    if (!profile.direction) { toast('⚠️ 请填写研究方向', 'warn'); return; }
+    if (!profile.age) { toast('⚠️ 请选择研究年龄', 'warn'); return; }
 
     state.storage.setProfile(profile);
     location.hash = '#/explore';
@@ -189,31 +263,38 @@ function bindProfileEvents() {
       const targetName = btn.getAttribute('data-voice-target');
       const input = form.querySelector(`[name="${targetName}"]`);
       if (!input) return;
+      const dots = form.querySelector('[data-voice-dots]');
 
       if (state.voice.isRecording() && state.voice._currentTarget === targetName) {
         state.voice.stop();
         btn.classList.remove('is-recording');
+        if (dots) dots.hidden = true;
         return;
       }
       state.voice._currentTarget = targetName;
       btn.classList.add('is-recording');
+      if (dots) dots.hidden = false;
       state.voice.start(
         (text, isFinal) => {
           input.value = text;
           if (isFinal) {
             btn.classList.remove('is-recording');
+            if (dots) dots.hidden = true;
             state.voice._currentTarget = null;
           }
         },
         (err) => {
           btn.classList.remove('is-recording');
+          if (dots) dots.hidden = true;
           state.voice._currentTarget = null;
           if (err === 'not-allowed' || err === 'service-not-allowed') {
-            toast('请允许使用麦克风权限');
+            toast('⚠️ 请允许使用麦克风（浏览器设置 → 网站权限）', 'warn');
           } else if (err === 'no-speech') {
-            toast('没有检测到语音');
+            toast('⚠️ 没听到声音，请重试', 'warn');
+          } else if (err === 'audio-capture') {
+            toast('⚠️ 未找到麦克风设备', 'error');
           } else if (err !== 'aborted') {
-            toast('语音输入失败：' + err);
+            toast('⚠️ 语音输入失败：' + err, 'error');
           }
         }
       );
@@ -229,8 +310,13 @@ function renderExploreSkeleton() {
         <h1 class="page__title">灵感探索</h1>
         <p class="page__subtitle">发现感兴趣的科研问题</p>
       </header>
-      <div class="card card--loading">
-        <div class="spinner" aria-label="加载中"></div>
+      <div class="card card--loading" aria-busy="true">
+        <div class="card__skeleton">
+          <span class="skeleton-bar skeleton-bar--lg"></span>
+          <span class="skeleton-bar skeleton-bar--md"></span>
+          <span class="skeleton-bar skeleton-bar--md"></span>
+          <span class="skeleton-bar skeleton-bar--sm"></span>
+        </div>
         <p class="card__loading-text">正在为你生成灵感…</p>
       </div>
       ${bottomNav('explore')}
@@ -240,7 +326,7 @@ function renderExploreSkeleton() {
 
 function renderExploreIdea(idea) {
   const review = idea.review || { innovation: 0, feasibility: 0, importance: 0 };
-  const methods = (idea.methods || []).map((m, i) =>
+  const methods = (idea.methods || []).map((m) =>
     `<li class="methods__item">${esc(m)}</li>`
   ).join('');
 
@@ -295,10 +381,12 @@ function renderExploreEmpty(profile) {
         <h1 class="page__title">灵感探索</h1>
         <p class="page__subtitle">发现感兴趣的科研问题</p>
       </header>
-      <div class="empty">
-        <p>请先 <a class="link" href="#/profile">完善科研画像</a>。</p>
-        <p class="empty__sub">已设置：${esc(profile.field)} · ${esc(profile.direction)} · ${esc(profile.age)}</p>
-      </div>
+      ${emptyState(
+        '🔭',
+        '尚未设置研究画像',
+        `请先<a class="link" href="#/profile">完善科研画像</a>，我们会基于你的领域与方向生成灵感。`,
+        `<a class="btn btn--primary" href="#/profile">去设置</a>`
+      )}
       ${bottomNav('explore')}
     </section>
   `;
@@ -314,14 +402,14 @@ function bindExploreIdeaEvents() {
       const fb = btn.getAttribute('data-fb');
       if (fb === 'copy') {
         const text = collectIdeaText(card);
-        copyText(text).then((ok) => toast(ok ? '已复制' : '复制失败'));
+        copyText(text).then((ok) => toast(ok ? '✅ 已复制' : '❌ 复制失败', ok ? 'success' : 'error'));
         return;
       }
       if (fb === 'like') {
         const idea = state.current;
         if (idea) state.storage.saveIdea(idea);
         state.storage.recordFeedback(ideaId, 'like');
-        toast('已收藏');
+        toast('✅ 已收藏', 'success');
         fetchNext();
         return;
       }
@@ -343,6 +431,10 @@ function collectIdeaText(cardEl) {
 }
 
 async function fetchNext() {
+  if (!state.ready || !state.generator) {
+    render();
+    return;
+  }
   // 中断上次请求
   if (state.currentAbort) {
     try { state.currentAbort.abort(); } catch (_) {}
@@ -368,16 +460,20 @@ async function fetchNext() {
   } catch (err) {
     if (ac.signal.aborted) return;
     console.error(err);
+    const isAbort = err && (err.name === 'AbortError' || /aborted/i.test(String(err.message)));
+    const errMsg = isAbort ? '已取消' : (err.message || String(err));
     document.getElementById('app').innerHTML = `
       <section class="page page--explore">
         <header class="page__header">
           <h1 class="page__title">灵感探索</h1>
           <p class="page__subtitle">发现感兴趣的科研问题</p>
         </header>
-        <div class="empty">
-          <p>生成灵感时出错了：${esc(err.message || String(err))}</p>
-          <button class="btn btn--primary" id="retry">重试</button>
-        </div>
+        ${emptyState(
+          '😕',
+          '生成灵感时出错',
+          esc(errMsg),
+          `<button class="btn btn--primary" id="retry">重试</button>`
+        )}
         ${bottomNav('explore')}
       </section>
     `;
@@ -396,10 +492,12 @@ function renderSaved() {
           <h1 class="page__title">收藏</h1>
           <p class="page__subtitle">你保存的灵感</p>
         </header>
-        <div class="empty">
-          <p>还没有收藏的灵感</p>
-          <a class="link" href="#/explore">去探索</a>
-        </div>
+        ${emptyState(
+          '🗂️',
+          '还没有收藏的灵感',
+          '在灵感探索页遇到喜欢的选题，点 ❤️ 即可收藏。',
+          `<a class="btn btn--primary" href="#/explore">去探索</a>`
+        )}
         ${bottomNav('saved')}
       </section>
     `;
@@ -436,7 +534,7 @@ function bindSavedEvents() {
       const id = btn.getAttribute('data-remove');
       state.storage.removeIdea(id);
       render();
-      toast('已删除');
+      toast('✅ 已删除', 'success');
     });
   });
 }
@@ -447,6 +545,11 @@ function renderMy() {
   const history = state.storage.getFeedbackHistory();
   const summary = { like: 0, dislike: 0, unrelated: 0 };
   history.forEach((f) => { summary[f.type] = (summary[f.type] || 0) + 1; });
+
+  const settings = loadProviderSettings();
+  const providerLabel = settings.type === 'openai'
+    ? `OpenAI 兼容 · ${esc(settings.model || '?')}`
+    : 'Mock（内置 34 条）';
 
   return `
     <section class="page page--my">
@@ -464,7 +567,7 @@ function renderMy() {
             <dt>研究年龄</dt><dd>${esc(profile.age)}</dd>
           </dl>
         ` : `
-          <p class="empty">尚未设置</p>
+          <p class="empty__body">尚未设置</p>
         `}
         <a class="btn btn--primary" href="#/profile">${profile ? '重新设置画像' : '去设置'}</a>
       </section>
@@ -479,14 +582,190 @@ function renderMy() {
         </dl>
       </section>
 
+      <section class="card card--provider">
+        <h2 class="card__section-title">🤖 当前 LLM</h2>
+        <p class="empty__body">${providerLabel}</p>
+        <a class="btn btn--ghost" href="#/settings">前往设置</a>
+      </section>
+
       <section class="card card--saved-list">
         <h2 class="card__section-title">🗂️ 收藏夹</h2>
-        <p>共 ${state.storage.getSavedIdeas().length} 条 · <a class="link" href="#/saved">查看</a></p>
+        <p class="empty__body">共 ${state.storage.getSavedIdeas().length} 条 · <a class="link" href="#/saved">查看</a></p>
       </section>
 
       ${bottomNav('my')}
     </section>
   `;
+}
+
+// ---------- 渲染：设置 (#/settings) ----------
+function renderSettings() {
+  const cfg = loadProviderSettings();
+  const type = cfg.type || 'mock';
+  const endpoint = cfg.endpoint || 'https://api.openai.com/v1/chat/completions';
+  const apiKey = cfg.apiKey || '';
+  const model = cfg.model || 'gpt-4o-mini';
+
+  return `
+    <section class="page page--settings">
+      <header class="page__header">
+        <h1 class="page__title">设置</h1>
+        <p class="page__subtitle">选择 LLM 提供方</p>
+      </header>
+
+      <div class="settings__section">
+        <h2 class="settings__section-title">LLM Provider</h2>
+        <form id="settings-form" class="settings__group" novalidate>
+          <label class="settings__option ${type === 'mock' ? 'is-selected' : ''}" data-option="mock">
+            <input type="radio" name="provider" value="mock" ${type === 'mock' ? 'checked' : ''} />
+            <div>
+              <span class="settings__option-label">Mock（内置 34 条）</span>
+              <span class="settings__option-desc">离线可用，无 API key，基于 data/mock-ideas.json。</span>
+            </div>
+          </label>
+          <label class="settings__option ${type === 'openai' ? 'is-selected' : ''}" data-option="openai">
+            <input type="radio" name="provider" value="openai" ${type === 'openai' ? 'checked' : ''} />
+            <div>
+              <span class="settings__option-label">OpenAI 兼容（你的 API）</span>
+              <span class="settings__option-desc">支持 OpenAI / DeepSeek / Moonshot / Ollama / LM Studio 等 /v1/chat/completions 端点。</span>
+            </div>
+          </label>
+
+          <div id="openai-fields" style="display:${type === 'openai' ? 'block' : 'none'};">
+            <label class="form__field">
+              <span class="form__label">Endpoint URL</span>
+              <input class="form__input" name="endpoint" type="url" placeholder="https://api.openai.com/v1/chat/completions" value="${esc(endpoint)}" autocomplete="off" />
+            </label>
+            <label class="form__field">
+              <span class="form__label">API Key</span>
+              <input class="form__input" name="apiKey" type="password" placeholder="sk-..." value="${esc(apiKey)}" autocomplete="off" />
+            </label>
+            <label class="form__field">
+              <span class="form__label">Model</span>
+              <input class="form__input" name="model" type="text" placeholder="gpt-4o-mini / deepseek-chat / ..." value="${esc(model)}" autocomplete="off" />
+            </label>
+            <p class="settings__hint">API Key 仅保存在本机 localStorage，不会上传到任何服务端。</p>
+          </div>
+
+          <div class="settings__row">
+            <button type="submit" class="btn btn--primary">保存</button>
+            <button type="button" class="btn btn--ghost" id="test-connection">测试连接</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="settings__section">
+        <h2 class="settings__section-title">关于</h2>
+        <p class="empty__body">IdeaMiner MVP · 纯前端 · 数据保存在你的浏览器。</p>
+      </div>
+
+      ${bottomNav('settings')}
+    </section>
+  `;
+}
+
+function bindSettingsEvents() {
+  const form = document.getElementById('settings-form');
+  if (!form) return;
+
+  // 切换 provider 时展开/收起 openai 字段
+  const openaiFields = document.getElementById('openai-fields');
+  const updateOptionStyles = () => {
+    form.querySelectorAll('.settings__option').forEach((opt) => {
+      const radio = opt.querySelector('input[type="radio"]');
+      opt.classList.toggle('is-selected', radio && radio.checked);
+    });
+    const openaiChecked = form.querySelector('input[name="provider"][value="openai"]').checked;
+    if (openaiFields) openaiFields.style.display = openaiChecked ? 'block' : 'none';
+  };
+  form.querySelectorAll('input[name="provider"]').forEach((r) => {
+    r.addEventListener('change', updateOptionStyles);
+  });
+
+  // 保存
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const type = String(fd.get('provider') || 'mock');
+    const next = {
+      type,
+      endpoint: String(fd.get('endpoint') || '').trim(),
+      apiKey:   String(fd.get('apiKey')   || '').trim(),
+      model:    String(fd.get('model')    || '').trim(),
+    };
+    if (type === 'openai') {
+      if (!next.endpoint) { toast('⚠️ 请填写 Endpoint URL', 'warn'); return; }
+      if (!next.apiKey)   { toast('⚠️ 请填写 API Key', 'warn'); return; }
+      if (!next.model)    { toast('⚠️ 请填写 Model', 'warn'); return; }
+    }
+    saveProviderSettings(next);
+    toast('✅ 已保存', 'success');
+    // 重新构造 generator（llm 替换）
+    await rebuildProvider(next);
+  });
+
+  // 测试连接
+  const testBtn = document.getElementById('test-connection');
+  if (testBtn) {
+    testBtn.addEventListener('click', async () => {
+      const fd = new FormData(form);
+      const type = String(fd.get('provider') || 'mock');
+      const cfg = {
+        type,
+        endpoint: String(fd.get('endpoint') || '').trim(),
+        apiKey:   String(fd.get('apiKey')   || '').trim(),
+        model:    String(fd.get('model')    || '').trim(),
+      };
+      if (type === 'openai') {
+        if (!cfg.endpoint || !cfg.apiKey || !cfg.model) {
+          toast('⚠️ 请先填写完整 OpenAI 配置', 'warn');
+          return;
+        }
+      }
+      testBtn.disabled = true;
+      const originalLabel = testBtn.textContent;
+      testBtn.textContent = '测试中…';
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 35000);
+      try {
+        const profile = state.storage.getProfile() || { field: '物理学', direction: '量子几何', age: '博士' };
+        const provider = await createProvider(cfg);
+        const draft = await provider.generateIdea(profile, ac.signal);
+        clearTimeout(timer);
+        toast(`✅ 连接成功：${esc(draft.question.slice(0, 18))}…`, 'success');
+      } catch (err) {
+        clearTimeout(timer);
+        const msg = (err && err.message) || String(err);
+        if (err && (err.name === 'AbortError' || /aborted/i.test(msg))) {
+          toast('⚠️ 测试超时已取消', 'warn');
+        } else {
+          toast('❌ 连接失败：' + esc(msg.slice(0, 80)), 'error');
+        }
+      } finally {
+        testBtn.disabled = false;
+        testBtn.textContent = originalLabel;
+      }
+    });
+  }
+}
+
+// ---------- 重建 provider（设置保存 / 启动时） ----------
+async function rebuildProvider(cfg) {
+  try {
+    const provider = await createProvider(cfg);
+    state.llm = provider;
+    state.generator = new IdeaGenerator(state.llm, undefined, state.storage);
+  } catch (err) {
+    console.error('rebuildProvider failed:', err);
+    toast('❌ ' + (err.message || 'provider 初始化失败'), 'error');
+  }
+}
+
+// ---------- 应用初始化 ----------
+async function init() {
+  const cfg = loadProviderSettings();
+  await rebuildProvider(cfg);
+  state.ready = true;
 }
 
 // ---------- 路由器 ----------
@@ -510,11 +789,37 @@ function render() {
     const profile = state.storage.getProfile();
     if (!profile) {
       app.innerHTML = renderExploreEmpty({ field: '?', direction: '?', age: '?' });
-      // 自动跳到 profile（首次进入）
-      // 不强制跳转，避免打断老用户
+    } else if (!state.ready) {
+      app.innerHTML = renderExploreSkeleton();
+      // 等 init 完成再 fetch
+      init().then(() => {
+        if (state.currentAbort && state.currentAbort.signal.aborted) return;
+        const ac = new AbortController();
+        state.currentAbort = ac;
+        state.generator.next(profile, ac.signal)
+          .then((idea) => {
+            if (ac.signal.aborted) return;
+            state.current = idea;
+            app.innerHTML = renderExploreIdea(idea);
+            bindExploreIdeaEvents();
+          })
+          .catch((err) => {
+            if (ac.signal.aborted) return;
+            console.error(err);
+            app.innerHTML = `
+              <section class="page page--explore">
+                <header class="page__header">
+                  <h1 class="page__title">灵感探索</h1>
+                  <p class="page__subtitle">发现感兴趣的科研问题</p>
+                </header>
+                ${emptyState('😕', '生成灵感时出错', esc(err.message || String(err)))}
+                ${bottomNav('explore')}
+              </section>
+            `;
+          });
+      });
     } else {
       app.innerHTML = renderExploreSkeleton();
-      // 异步加载
       const ac = new AbortController();
       state.currentAbort = ac;
       state.generator.next(profile, ac.signal)
@@ -533,9 +838,7 @@ function render() {
                 <h1 class="page__title">灵感探索</h1>
                 <p class="page__subtitle">发现感兴趣的科研问题</p>
               </header>
-              <div class="empty">
-                <p>生成灵感时出错了：${esc(err.message || String(err))}</p>
-              </div>
+              ${emptyState('😕', '生成灵感时出错', esc(err.message || String(err)))}
               ${bottomNav('explore')}
             </section>
           `;
@@ -546,6 +849,9 @@ function render() {
     bindSavedEvents();
   } else if (route === '/my') {
     app.innerHTML = renderMy();
+  } else if (route === '/settings') {
+    app.innerHTML = renderSettings();
+    bindSettingsEvents();
   } else {
     app.innerHTML = renderProfile();
     bindProfileEvents();
@@ -555,6 +861,9 @@ function render() {
 // ---------- 启动 ----------
 window.addEventListener('hashchange', render);
 window.addEventListener('DOMContentLoaded', () => {
+  // 启动初始化（异步构造 provider）
+  init();
+
   // 如果用户没有 profile 也没有 hash，引导到 profile 页
   if (!state.storage.getProfile() && !(location.hash && location.hash.length > 1)) {
     location.hash = '#/profile';
