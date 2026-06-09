@@ -1,0 +1,160 @@
+{
+  "ideas": [
+    {
+      "id": "idea-001",
+      "field": "物理学",
+      "question": "里德伯原子之间的阻塞效应能否用于实现高保真度的多比特量子门？",
+      "background": "里德伯原子因其主量子数n很大而具有强烈的偶极-偶极相互作用，可导致邻近原子激发被阻塞（blockade effect）。这一现象已被用于实现两比特CZ门和简单的量子模拟。但当原子数扩展到几十个以上时，阻塞半径的有限性导致门操作出现泄漏误差，限制了大规模门保真度。",
+      "significance": "如果能在保持阻塞选择性的同时实现高保真度多比特门，将推动中性原子量子计算从原型机走向实用规模，为容错量子计算提供新的物理实现路径。",
+      "methods": [
+        "采用碱金属原子（87Rb或133Cs）装载到光镊阵列中，通过双光子激发至里德伯态（n=70~100）",
+        "构造包含偶极-偶极相互作用与范德华相互作用的Floquet哈密顿量，理论分析阻塞半径对多比特门保真度的影响",
+        "在光镊阵列中实现3-5个原子的并行CZ门，并通过随机化基准（randomized benchmarking）测量保真度",
+        "对比不同原子间距、激发功率和失谐条件下的门误差，验证理论模型"
+      ]
+    },
+    {
+      "id": "idea-002",
+      "field": "物理学",
+      "question": "一维里戈密莱斯模型中非线性耗散输运与量子度规之间是否存在几何对应？",
+      "background": "在1D Rice-Mele模型（带交错on-site能 m 和交错跃迁 t±dt）中，量子度规（quantum metric）和贝里联络（Berry connection）已经被广泛用于解释线性响应下的电极化率。最近的研究表明，三阶非线性电导 σ^(2) 存在与量子度规直接相关的几何贡献，符号为 Σ_2、Σ_3 形式。",
+      "significance": "若能在非平衡稳态（NESS）框架下建立非线性耗散输运与量子度规的严格对应，将为量子材料中非线性霍尔效应的微观机制提供全新视角，并可推广到二维扭转材料。",
+      "methods": [
+        "在1D Rice-Mele（参数 t0=1.0, dt=0.5, m0=0.4, a0=1.0）下解析推导 σ^(2) 的 PolyGamma-Fermi 函数表示",
+        "使用 Keldysh 形式或非平衡格林函数（NEGF）数值验证 Σ_2、Σ_3 项与量子度规 g_12 的精确关系",
+        "在 10 个随机 (k, μ, β) 测试点上做位精确（bit-exact）验证，容差 < 1e-10",
+        "将结果推广到时间反演破缺的二维 Haldane 模型作为对比"
+      ]
+    },
+    {
+      "id": "idea-003",
+      "field": "物理学",
+      "question": "在超冷原子光晶格中，能否直接观测到 Haldane 模型的拓扑边缘态？",
+      "background": "Haldane 模型在 honeycomb 晶格上以复数次近邻跃迁实现量子反常霍尔效应，预言存在无能隙的边缘态。冷原子平台具有高度可控的合成维度与可调节的次近邻耦合，是验证该模型的理想系统，但迄今尚未有直接观测到边缘态的实验。",
+      "significance": "直接观测边缘态是拓扑物态从理论走向应用的必经一步。冷原子平台为'原子霍尔条带'的相干输运测量提供量子模拟能力，可与凝聚态实验形成互补。",
+      "methods": [
+        "在蜂窝光晶格中加载玻色子（87Rb）并利用光诱导产生复数次近邻跃迁",
+        "通过拉曼耦合实现时间依赖Floquet调制以引入有效磁通 Φ",
+        "在带状几何中用原位成像（quantum gas microscope）直接测量密度分布",
+        "对边缘态做傅里叶时间演化分析并提取输运速度，与线性色散预测对比"
+      ]
+    },
+    {
+      "id": "idea-004",
+      "field": "化学",
+      "question": "机器学习势能面（ML-PES）能否准确预测过渡金属催化碳氢键活化的反应路径？",
+      "background": "碳氢键活化是有机合成中长期挑战的难题，过渡金属（Pd、Ir、Rh）配合物催化剂展现出特殊活性。传统 DFT 方法对过渡态描述不准确且计算昂贵，难以在筛选数十种配体时使用。ML-PES（如 SchNet、PhysNet）已经能在小分子上达到亚千卡精度，但在过渡金属反应中仍存在外推问题。",
+      "significance": "如果能训练出对 Pd/Ir 配合物催化 C-H 活化具有化学精度的 ML-PES，将使大规模筛选催化剂配体成为可能，对药物合成和功能材料都有重要价值。",
+      "methods": [
+        "使用 CCSD(T)/def2-TZVP 计算 200-500 个关键构型（反应物、过渡态、产物）作为训练数据",
+        "在 SchNet/PhysNet 上加入 d 电子轨道的等变特征（e3nn 或 NequIP）",
+        "对每种催化剂体系（Pd(OAc)₂, [IrCl(cod)]₂ 等）训练专用 ML-PES",
+        "在 50 个未见测试集上做逆向动力学模拟，比较活化自由能垒的预测精度（目标 MAE < 1 kcal/mol）"
+      ]
+    },
+    {
+      "id": "idea-005",
+      "field": "化学",
+      "question": "二维共价有机框架（2D COF）能否用于选择性电催化二氧化碳还原为多碳产物？",
+      "background": "CO₂ 还原反应（CO₂RR）中 C2+ 产物（乙烯、乙醇）具有更高经济价值，但需要多电子-质子耦合且路径复杂。2D COF 可以通过分子设计调控活性位点的电子结构与配位环境，但目前大多数研究都集中在 C1 产物。",
+      "significance": "若 2D COF 能高选择性生成乙醇或乙烯，将为绿氢-碳循环利用提供新催化材料体系，并推动对催化活性位点设计的分子级理解。",
+      "methods": [
+        "设计含 Cu 卟啉或 Cu 酞菁节点的 2D COF（用 DFT 优化）",
+        "用恒电位方法在 H-cell 中测试 CO₂RR 性能（电解液 0.1M KHCO₃，电压 -0.6 ~ -1.2 V vs RHE）",
+        "通过 ¹H-NMR 和气相色谱在线监测产物分布",
+        "用原位 XAS（X 射线吸收谱）和 ATR-FTIR 表征活性 Cu 位点的电子结构演化"
+      ]
+    },
+    {
+      "id": "idea-006",
+      "field": "生物学",
+      "question": "单细胞 RNA 测序能否揭示肿瘤微环境中耗竭性 T 细胞的分化轨迹？",
+      "background": "耗竭性 T 细胞（exhausted T cells）是肿瘤免疫逃逸的关键机制，传统 bulk RNA-seq 无法解析其亚群异质性。scRNA-seq（如 10x Genomics）已经能给出数万个细胞的表达谱，但干性样（progenitor-like）与终末耗竭亚群之间的分化轨迹需要 pseudotime 分析来重建。",
+      "significance": "明确耗竭 T 细胞的分化路径将指导联合免疫治疗（anti-PD-1 + anti-TIM-3 等）的设计时机，并有助于预测免疫检查点抑制剂（ICB）疗效。",
+      "methods": [
+        "对 6-10 例非小细胞肺癌患者的肿瘤与配对外周血做 scRNA-seq（10x Genomics 5' v3）",
+        "用 Seurat v5 进行整合、去批次和质量控制（保留 > 1000 基因 / 细胞）",
+        "用 Monocle3 / Slingshot 推断 CD8⁺ T 细胞的 pseudotime 轨迹",
+        "结合 TCR 克隆型分析（同源 V(D)J 测序）验证轨迹与克隆扩增的关系"
+      ]
+    },
+    {
+      "id": "idea-007",
+      "field": "生物学",
+      "question": "肠道微生物组的色氨酸代谢产物能否影响小鼠的抑郁样行为？",
+      "background": "肠道菌群-肠-脑轴（microbiota-gut-brain axis）研究近年取得重要进展。色氨酸（Trp）经细菌代谢可产生吲哚衍生物（如 IAA、IPA），通过激活 AhR 影响宿主免疫与神经活动。但 Trp 代谢物在抑郁模型中的因果作用尚未完全确立。",
+      "significance": "若能证明特定 Trp 代谢物是抑郁样行为的可调节介质，将为开发'精神益生菌'（psychobiotics）提供新靶点。",
+      "methods": [
+        "用 LC-MS/MS 测定 CSDS（chronic social defeat stress）抑郁模型小鼠粪便中 Trp 代谢物谱",
+        "对无菌（germ-free）小鼠灌胃 IAA 或 IPA（10 mg/kg/天，2 周）后做行为学测试（强迫游泳、蔗糖偏好）",
+        "用 16S rRNA 测序验证肠道菌群重建情况",
+        "通过海马 RNA-seq 与血清炎症因子检测下游机制"
+      ]
+    },
+    {
+      "id": "idea-008",
+      "field": "计算机科学",
+      "question": "图神经网络（GNN）能否替代传统密度泛函理论（DFT）预测二维材料扭转堆垛的哈密顿量？",
+      "background": "DeepH（Li et al. Nat. Comput. Sci. 2, 367, 2022）方法在 32 轨道 OpenMX 基组下对石墨烯、MoS₂ 扭转体系的哈密顿量预测精度达到 0.7-1.3 meV/对。GNN 学习的是局部原子环境到局域哈密顿量的映射，比直接预测能带更接近物理。",
+      "significance": "若 GNN 能在显著降低的训练数据量下保持精度，将极大加速魔角超导、莫尔激子等扭转材料家族的'逆向设计'。",
+      "methods": [
+        "对 5 个扭转角（9.43°、7.34°、5.09°、3.48°、1.08°）的 MoS₂ 双层构建 3 轨道 d 紧束缚（TB）基态",
+        "用 100 个原子构型训练小型 MPNN（3 层 message passing + 1 层 local-frame transformation）",
+        "在 20 个独立测试集上比较 TB ground truth 与 GNN 预测的能谱",
+        "目标 MAE < 1 meV，并在 (m,n)=(12,13) 莫尔超晶胞上验证可迁移性"
+      ]
+    },
+    {
+      "id": "idea-009",
+      "field": "计算机科学",
+      "question": "扩散模型（diffusion model）能否用于生成具有目标物理属性的蛋白质构象？",
+      "background": "AlphaFold2/3 在静态结构预测上取得突破，但构象集合（conformational ensemble）仍主要依靠 MD 模拟。扩散模型（DDPM、score-based）已能生成高质量图像与小分子，最近扩展到蛋白质构象（AlphaFold-Multistate、IdpGAN）。",
+      "significance": "若能根据目标物理属性（如结合口袋大小、二级结构含量）可控生成蛋白质构象，将极大加速酶设计与变构药物开发。",
+      "methods": [
+        "用蛋白数据库（PDB）+ 分子动力学轨迹（DESRES、ATLAS）训练 1D 序列条件扩散模型",
+        "将'目标属性'作为额外的 conditional embedding 输入到 denoising network",
+        "在 CASP15 测试集上比较生成构象与实验 ensemble 的 RMSF 分布",
+        "用 OpenMM 对生成构象做 100ns MD 验证稳定性"
+      ]
+    },
+    {
+      "id": "idea-010",
+      "field": "数学",
+      "question": "黎曼 ζ 函数非平凡零点在小数间隔的统计性质是否与随机矩阵理论（GUE）严格一致？",
+      "background": "Montgomery 对偶对相关函数（pair correlation）的猜想指出，ζ 的非平凡零点间距统计与 GUE 随机矩阵的间距统计相一致。GUE 与 GOE 之间的差异在越来越短的尺度上得到验证。",
+      "significance": "若能在统计意义上排除 GUE 之外的所有可能，将进一步加固 Hilbert-Pólya 猜想与黎曼假设的物理-数学桥梁。",
+      "methods": [
+        "用 L-functions 项目（LMFDB）提供的前 10⁹ 个非平凡零点做 1-统计量",
+        "计算 GUE 归一化间距分布的 n-level correlation",
+        "在数论谱和高斯辛 ensemble 之间做 Kolmogorov-Smirnov 检验",
+        "用 LLL 算法或 Rosenzweig 模型生成零点的随机替代品做对照实验"
+      ]
+    },
+    {
+      "id": "idea-011",
+      "field": "数学",
+      "question": "代数几何中 Calabi-Yau 流形的模空间在量子化时是否存在奇点解消？",
+      "background": "Calabi-Yau (CY) 流形在弦论紧致化中具有核心地位，Yukawa 耦合的量子修正导致 mirror 配对和模空间变形。Gromov-Witten 不变量定义了小 quantum 积，但模空间在边界（large complex structure limit）出现奇点。",
+      "significance": "若存在严格奇点解消，将为镜对称的数学基础提供严格框架，并可能给出 F-theory 紧化的几何分类。",
+      "methods": [
+        "在 P⁴[5] 中的 5 次 hypersurface CY 上显式计算 GW 不变量到 genus 3",
+        "用 Batyrev-Borisov 构造 mirror 配对并比较 Picard 数",
+        "在镜侧的边界附近构造 resolution 方案（toric 几何的 blow-up）",
+        "用 Singular 软件包做符号代数验证"
+      ]
+    },
+    {
+      "id": "idea-012",
+      "field": "材料科学",
+      "question": "钙钛矿太阳能电池（PSC）中的界面缺陷能否通过二维缓冲层（2D perovskite）有效钝化？",
+      "background": "三维钙钛矿（MAPbI₃, FAPbI₃）太阳能电池的光电转换效率已超 26%，但长期稳定性受限于表面/界面缺陷。2D 钙钛矿（如 (BA)₂(MA)ₙ₋₁PbₙI₃ₙ₊₁）作为'盖层'可以钝化缺陷并阻隔水汽，但同时引入电荷传输势垒。",
+      "significance": "若能优化 2D/3D 异质界面的能级匹配和载流子动力学，可使 PSC 在维持高效率的同时达到工业级稳定性（> 1000 小时 85°C/85% RH）。",
+      "methods": [
+        "在 3D 钙钛矿（FAPbI₃ 为主）上原位旋涂不同 n 值（n=1,2,3,4）的 2D 钙钛矿",
+        "用 PLQY 和 TRPL（时间分辨光致发光）表征界面复合速率",
+        "用 XPS 和 UPS 测量能级对齐，提取 2D/3D 异质结的 CBO/VBO",
+        "在标准 AM1.5G 模拟太阳光下追踪 PCE 演化（1000 小时，85°C, 85% RH）"
+      ]
+    }
+  ]
+}
