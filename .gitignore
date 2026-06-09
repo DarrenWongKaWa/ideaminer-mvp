@@ -6,3 +6,6 @@ node_modules/
 *.swp
 *.tmp
 __pycache__/
+
+# Mavis orchestration internals (team plans, decision logs, scratchpads)
+.mavis/
