@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-10
+
+### Added
+- **Search by text or voice** on the Explore Ideas page. The user can
+  type a free-form query or tap 🎤 to speak one; the app finds the
+  best-matching idea from the 34 hand-written entries and shows a
+  small "🔍 Matched: <query>" badge above the question.
+- `js/idea-search.js`: a new module exporting `tokenizeQuery`,
+  `scoreIdea`, and `bestMatch`. Tokenizer lowercases, splits on
+  non-word characters, drops tokens shorter than 2 chars, and
+  deduplicates. The scorer awards +3 per token in `question`,
+  +2 per token in `background` / `significance`, +1 per token in
+  any of `methods[i]`, and a +1 bonus if the token appears in
+  `field`. Score 0 means "no match".
+- `IdeaGenerator.nextWithQuery(profile, query, signal)`: empty
+  query falls back to the regular random flow; non-empty query
+  runs through `bestMatch` and, on a hit, returns a `ReviewedIdea`
+  with the original idea id preserved (prefixed with `search-`)
+  and `_matchedQuery` / `_score` attached for the badge. On no
+  match, throws a recognizable `Error("No idea matched '<query>'")`
+  so `app.js` can render the "Surprise me" empty state.
+- `MockLLMProvider.getIdeas()`: a public accessor for the already-
+  loaded ideas array (awaits the in-flight first load).
+- Search row UI in `app.js`: text input + 🎤 voice button + Search
+  button + Clear (×) button. Voice input reuses the existing
+  `VoiceInput` class (zh-CN) and auto-submits on the final
+  utterance. The 4 feedback buttons (Like / Dislike / Unrelated /
+  Copy) still work unchanged on a matched idea. Voice permission
+  denied, no-speech, and audio-capture errors each show a clear
+  toast.
+- CSS: `.search` row, `.search__input`, `.search__mic`,
+  `.search__submit`, `.search__clear`, `.search__match-badge`. The
+  320-360 px mobile breakpoint is explicitly handled so the row
+  does not overflow.
+- README: "Search by text or voice" feature line under Features
+  and a new "🔍 How search works" section explaining the scoring
+  algorithm and the design choice of keeping the scorer a separate
+  module.
+
+### Notes
+- Search query is not persisted in `localStorage` (kept simple for
+  v0.4.0; a "recent searches" row is a candidate for v0.5).
+- The real LLM provider (`OpenAILLMProvider`) does not implement
+  `getIdeas()`, so search in OpenAI mode currently shows the
+  "no match" empty state. Wiring the query into the LLM prompt
+  is a future-work item.
+
 ## [0.3.0] - 2026-06-10
 
 ### Changed

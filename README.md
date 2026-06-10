@@ -23,6 +23,9 @@ dropped in with zero refactoring.
 
 - 🔄 **4-step workflow** — Refine Profile → Explore Ideas → 3D Review → Feedback
 - 🎤 **Voice input (zh-CN)** + text input, with pulse animation and error toasts
+- 🔍 **Text + voice search** — type or speak a query, the app finds the
+  best-matching idea from the 34 hand-written entries (weighted keyword
+  scoring, see "How search works" below)
 - 📊 **3-dimension review** — Innovation / Feasibility / Importance, scored 0-100 per idea
 - 👍 **Like / 👎 Dislike / 🚫 Unrelated** feedback buttons, next idea adapts to your preferences
 - ⭐ **Save to favorites**, view profile & feedback stats
@@ -84,12 +87,47 @@ Module-to-file mapping:
 | `js/openai-llm-provider.js` | `OpenAILLMProvider` — OpenAI-compatible implementation | Any other compatible service (DeepSeek / Qwen / Moonshot) |
 | `js/storage.js` | `Storage` interface + `LocalStorageProvider` (with in-memory mirror) | IndexedDB / Supabase / your own API |
 | `js/reviewer.js` | `Reviewer` interface + `MockReviewer` (FNV-1a hash) | LLM-as-judge / rule-based scoring |
-| `js/idea-generator.js` | Orchestrator: chains LLM + Reviewer + Storage preferences | Add ranking / A/B logic |
+| `js/idea-generator.js` | Orchestrator: chains LLM + Reviewer + Storage preferences; `nextWithQuery()` for search | Add ranking / A/B logic |
+| `js/idea-search.js` | Tokenize + weighted keyword scoring over the mock-ideas dataset (v0.4.0) | Vector / semantic search backend |
 | `js/voice.js` | Web Speech API wrapper (zh-CN, feature-detected) | Third-party voice SDK (iFlytek / Aliyun) |
 | `js/app.js` | Hash router + page rendering | Any frontend framework (React / Vue) |
 
 `AbortController` is propagated from the router into `LLMProvider.generateIdea`
 on route changes, preventing in-flight request leaks.
+
+---
+
+## 🔍 How search works
+
+The Explore Ideas page has a search row above the idea card. Type a
+free-form query (e.g. "topological superconductor", "CRISPR resistance",
+"quantum metric nonlinear") and press **Enter** or **Search**, or tap
+the 🎤 button to speak. The query is run through a small keyword
+scoring algorithm in `js/idea-search.js`:
+
+- The input is lowercased, split on non-word characters, and tokens
+  with length < 2 are dropped.
+- For each remaining token, an idea gets
+  - **+3** if the token appears as a substring of `question`,
+  - **+2** if it appears in `background` or `significance`,
+  - **+1** if it appears in any of `methods[i]`,
+  - **+1** (bonus) if it appears in `field`.
+- The idea with the highest total score wins. A score of 0 means
+  "no match" and the UI shows a "No idea matched '<query>'" empty
+  state with a **Surprise me** button that re-runs the random flow.
+- The matched idea carries a small "🔍 Matched: <query>" badge above
+  the question, so the user can always tell at a glance whether the
+  displayed card was a search hit or a random pick.
+
+The scorer is intentionally simple — substring matching, no stemming,
+no semantic similarity. It is good enough for the 34 hand-written
+ideas in `data/mock-ideas.json`; a real production deployment would
+swap `js/idea-search.js` for a vector / semantic search backend, and
+the rest of the app would not need to change. The real LLM path
+(`OpenAILLMProvider`) does not currently implement a local search
+index; in that mode, search falls back to the empty state with a
+clear "no match" message until a future version wires the query into
+the LLM prompt.
 
 ---
 

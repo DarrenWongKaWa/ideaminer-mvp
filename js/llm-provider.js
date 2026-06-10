@@ -71,6 +71,22 @@ export class MockLLMProvider extends LLMProvider {
   }
 
   /**
+   * Public accessor for the loaded ideas array.
+   * Returns the in-memory cache if already loaded; otherwise awaits
+   * the in-flight load so callers do not race the first fetch.
+   * Returns an empty array on load error (caller can decide how to handle).
+   * @returns {Promise<Array>}
+   */
+  async getIdeas() {
+    try {
+      return await this._load();
+    } catch (err) {
+      console.warn('MockLLMProvider.getIdeas failed:', err);
+      return [];
+    }
+  }
+
+  /**
    * @param {ResearchProfile} profile
    * @param {AbortSignal} [signal]
    * @returns {Promise<IdeaDraft>}

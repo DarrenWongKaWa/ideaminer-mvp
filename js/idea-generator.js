@@ -10,6 +10,11 @@
  * Extension points:
  *  - Scheduling logic is decoupled from concrete LLM / Reviewer / Storage; to extend
  *    you only swap the implementation in app.js, IdeaGenerator internals stay the same.
+ *  - nextWithQuery() lets the caller (Explore Ideas search row) pull a specific
+ *    idea by free-form text or voice. The keyword search lives in idea-search.js.
+ *    When the underlying provider is a real LLM (not Mock), search degrades
+ *    gracefully — _loadIdeas() falls back to a direct fetch of
+ *    data/mock-ideas.json when the provider does not expose getIdeas().
  * ------------------------------------------------------------
  */
 
@@ -21,6 +26,7 @@
  */
 
 import { MockReviewer } from './reviewer.js';
+import { bestMatch } from './idea-search.js';
 
 export class IdeaGenerator {
   /**
@@ -32,6 +38,9 @@ export class IdeaGenerator {
     this.llm = llmProvider;
     this.reviewer = reviewer || new MockReviewer();
     this.storage = storage;
+    // Cache for the search-fallback path (used when llm.getIdeas is missing).
+    this._mockIdeasCache = null;
+    this._mockIdeasInflight = null;
   }
 
   /**
@@ -49,6 +58,50 @@ export class IdeaGenerator {
     // (mock data numbering idea-001..idea-012 maps to 6 fields)
     // A real scenario should join against a database here
     return null; // let MockLLMProvider do uniform random on its own
+  }
+
+  /**
+   * Load the ideas array used for the search path.
+   *
+   * Resolution order:
+   *   1. If the LLM provider exposes `getIdeas()` (e.g. MockLLMProvider),
+   *      prefer it — the provider may have already cached the data.
+   *   2. Otherwise fall back to a one-time `fetch('data/mock-ideas.json')`
+   *      and cache the result on the instance. This keeps the search
+   *      working even with real LLM providers (e.g. OpenAILLMProvider)
+   *      that have no local ideas array.
+   *
+   * @returns {Promise<Array>}
+   */
+  async _loadIdeas() {
+    if (typeof this.llm.getIdeas === 'function') {
+      try {
+        const ideas = await this.llm.getIdeas();
+        if (Array.isArray(ideas) && ideas.length > 0) return ideas;
+      } catch (err) {
+        // Fall through to the direct-fetch fallback.
+        console.warn('IdeaGenerator: llm.getIdeas() failed, falling back to fetch:', err);
+      }
+    }
+    if (this._mockIdeasCache) return this._mockIdeasCache;
+    if (this._mockIdeasInflight) return this._mockIdeasInflight;
+    this._mockIdeasInflight = fetch('data/mock-ideas.json', { cache: 'no-store' })
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status} fetching data/mock-ideas.json`);
+        return r.json();
+      })
+      .then((j) => {
+        if (!j || !Array.isArray(j.ideas)) {
+          throw new Error('data/mock-ideas.json must contain an "ideas" array');
+        }
+        this._mockIdeasCache = j.ideas;
+        return j.ideas;
+      })
+      .catch((err) => {
+        this._mockIdeasInflight = null;
+        throw err;
+      });
+    return this._mockIdeasInflight;
   }
 
   /**
@@ -74,6 +127,93 @@ export class IdeaGenerator {
       methods: draft.methods,
       review,
       generatedAt: Date.now(),
+    };
+  }
+
+  /**
+   * Generate the next idea from a free-form search query.
+   * - Empty / whitespace query -> falls back to this.next(profile, signal).
+   * - Non-empty query -> tokenize and score the local ideas array
+   *   (this._loadIdeas()). If no idea matches, throws an Error with a
+   *   recognizable message (the app uses this to render the "no match"
+   *   empty state). If a match is found, the idea is wrapped into a
+   *   ReviewedIdea (same shape as this.next) so the existing feedback /
+   *   save code paths work unchanged.
+   * - For real LLM providers (no local ideas array), this method
+   *   currently falls back to a direct fetch of data/mock-ideas.json
+   *   so the search still works over the 34 hand-written ideas. A
+   *   future version can pass the query into the LLM prompt and
+   *   generate a search-flavored idea instead.
+   *
+   * @param {ResearchProfile} profile
+   * @param {string} query          Raw user query (may be empty)
+   * @param {AbortSignal} [signal]
+   * @returns {Promise<import('./storage.js').ReviewedIdea>}
+   */
+  async nextWithQuery(profile, query, signal) {
+    const raw = (query == null ? '' : String(query)).trim();
+
+    // Empty query: fall back to the regular random flow.
+    if (!raw) return this.next(profile, signal);
+
+    // Honour abort before doing any I/O.
+    if (signal && signal.aborted) {
+      throw new DOMException('aborted', 'AbortError');
+    }
+
+    let ideas;
+    try {
+      ideas = await this._loadIdeas();
+    } catch (err) {
+      throw new Error('No idea matched "' + raw + '"');
+    }
+    if (signal && signal.aborted) {
+      throw new DOMException('aborted', 'AbortError');
+    }
+    if (!Array.isArray(ideas) || ideas.length === 0) {
+      throw new Error('No idea matched "' + raw + '"');
+    }
+
+    const hit = bestMatch(ideas, raw);
+    if (!hit) {
+      // Recognizable error: app.js pattern-matches on the prefix to
+      // show the "no match + Surprise me" empty state.
+      throw new Error('No idea matched "' + raw + '"');
+    }
+
+    // Use the matched raw idea (with id/field) as the draft; the
+    // reviewer runs over the question to produce stable scores.
+    const pick = hit.idea;
+    const draft = {
+      question: pick.question,
+      background: pick.background,
+      significance: pick.significance,
+      methods: Array.isArray(pick.methods) ? pick.methods.slice() : [],
+    };
+
+    const review = await this.reviewer.review(draft);
+    if (signal && signal.aborted) {
+      throw new DOMException('aborted', 'AbortError');
+    }
+
+    // Preserve the original idea id when present so feedback / save
+    // continues to dedupe correctly; otherwise mint a fresh id.
+    const id = (pick.id && /^idea-/.test(pick.id))
+      ? 'search-' + pick.id
+      : 'rv-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+
+    return {
+      id,
+      question: draft.question,
+      background: draft.background,
+      significance: draft.significance,
+      methods: draft.methods,
+      review,
+      generatedAt: Date.now(),
+      // Surface the matched score for the "Matched: <query>" badge.
+      _matchedQuery: raw,
+      _score: hit.score,
+      _sourceIdeaId: pick.id || null,
     };
   }
 }

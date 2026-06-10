@@ -324,11 +324,49 @@ function renderExploreSkeleton() {
   `;
 }
 
+// ---------- Render: search row (text + voice + submit + clear) ----------
+function renderSearchRow(currentQuery) {
+  const q = currentQuery || '';
+  const voiceSupported = state.voice.isSupported();
+  return `
+    <form id="search-form" class="search" role="search" autocomplete="off">
+      <span class="search__icon" aria-hidden="true">🔍</span>
+      <input
+        id="search-input"
+        class="search__input"
+        name="q"
+        type="text"
+        value="${esc(q)}"
+        placeholder="Describe what you want to research, or use 🎤"
+        aria-label="Search ideas by text or voice"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+      />
+      ${voiceSupported ? `
+        <button type="button" id="search-mic" class="search__mic" aria-label="Voice input for search">
+          <span aria-hidden="true">🎤</span>
+        </button>
+      ` : ''}
+      <button type="submit" id="search-submit" class="search__submit" aria-label="Search">
+        <span aria-hidden="true">Search</span>
+      </button>
+      <button type="button" id="search-clear" class="search__clear" aria-label="Clear search" title="Clear search">
+        <span aria-hidden="true">×</span>
+      </button>
+    </form>
+  `;
+}
+
 function renderExploreIdea(idea) {
   const review = idea.review || { innovation: 0, feasibility: 0, importance: 0 };
   const methods = (idea.methods || []).map((m) =>
     `<li class="methods__item">${esc(m)}</li>`
   ).join('');
+  const matchedQuery = idea && idea._matchedQuery;
+  const matchBadge = matchedQuery
+    ? `<div class="search__match-badge" role="status">🔍 Matched: <em>${esc(matchedQuery)}</em></div>`
+    : '';
 
   return `
     <section class="page page--explore">
@@ -336,6 +374,10 @@ function renderExploreIdea(idea) {
         <h1 class="page__title">Explore Ideas</h1>
         <p class="page__subtitle">Discover research questions that interest you</p>
       </header>
+
+      ${renderSearchRow(matchedQuery || '')}
+
+      ${matchBadge}
 
       <article class="card" data-idea-id="${esc(idea.id)}">
         <h2 class="card__question">${esc(idea.question)}</h2>
@@ -392,7 +434,27 @@ function renderExploreEmpty(profile) {
   `;
 }
 
+function renderExploreNoMatch(query) {
+  return `
+    <section class="page page--explore">
+      <header class="page__header">
+        <h1 class="page__title">Explore Ideas</h1>
+        <p class="page__subtitle">Discover research questions that interest you</p>
+      </header>
+      ${renderSearchRow(query || '')}
+      ${emptyState(
+        '🔍',
+        `No idea matched “${esc(query || '')}”`,
+        `Try a different term, or let us pick a random one for you.`,
+        `<button class="btn btn--primary" id="surprise-me" type="button">Surprise me</button>`
+      )}
+      ${bottomNav('explore')}
+    </section>
+  `;
+}
+
 function bindExploreIdeaEvents() {
+  bindSearchRowEvents();
   const card = document.querySelector('.card[data-idea-id]');
   if (!card) return;
   const ideaId = card.getAttribute('data-idea-id');
@@ -420,6 +482,87 @@ function bindExploreIdeaEvents() {
   });
 }
 
+function bindExploreNoMatchEvents() {
+  bindSearchRowEvents();
+  const surprise = document.getElementById('surprise-me');
+  if (surprise) {
+    surprise.addEventListener('click', () => {
+      const input = document.getElementById('search-input');
+      if (input) input.value = '';
+      fetchNext();
+    });
+  }
+}
+
+/**
+ * Wire up the search row: Enter / Submit -> run search; Clear -> reset;
+ * Mic -> VoiceInput (lang='zh-CN', mirrors the profile-form pattern).
+ */
+function bindSearchRowEvents() {
+  const form = document.getElementById('search-form');
+  if (!form) return;
+  const input = form.querySelector('#search-input');
+  const mic = form.querySelector('#search-mic');
+  const clear = form.querySelector('#search-clear');
+
+  // Submit (Enter or Search button) -> run search
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const q = (input && input.value ? input.value : '').trim();
+    runSearch(q);
+  });
+
+  // Clear button -> reset to random
+  if (clear) {
+    clear.addEventListener('click', () => {
+      if (input) input.value = '';
+      fetchNext();
+    });
+  }
+
+  // Mic button -> VoiceInput
+  if (mic) {
+    mic.addEventListener('click', () => {
+      if (state.voice.isRecording() && state.voice._currentTarget === 'search') {
+        state.voice.stop();
+        mic.classList.remove('is-recording');
+        state.voice._currentTarget = null;
+        return;
+      }
+      state.voice._currentTarget = 'search';
+      mic.classList.add('is-recording');
+      state.voice.start(
+        (text, isFinal) => {
+          if (input) input.value = text;
+          if (isFinal) {
+            mic.classList.remove('is-recording');
+            state.voice._currentTarget = null;
+            // Auto-submit on final utterance so the user does not
+            // have to tap Search again.
+            const q = (input && input.value ? input.value : '').trim();
+            if (q) runSearch(q);
+          }
+        },
+        (err) => {
+          mic.classList.remove('is-recording');
+          state.voice._currentTarget = null;
+          if (err === 'not-allowed' || err === 'service-not-allowed') {
+            toast('⚠️ Please allow microphone access (Browser Settings → Site permissions)', 'warn');
+          } else if (err === 'no-speech') {
+            toast("⚠️ Didn't hear anything, please try again", 'warn');
+          } else if (err === 'audio-capture') {
+            toast('⚠️ No microphone device found', 'error');
+          } else if (err === 'unsupported') {
+            toast('⚠️ This browser does not support voice input', 'warn');
+          } else if (err !== 'aborted') {
+            toast('⚠️ Voice input failed: ' + err, 'error');
+          }
+        }
+      );
+    });
+  }
+}
+
 function collectIdeaText(cardEl) {
   const q = cardEl.querySelector('.card__question')?.textContent || '';
   const bg = cardEl.querySelectorAll('.card__section-body')[0]?.textContent || '';
@@ -431,10 +574,31 @@ function collectIdeaText(cardEl) {
 }
 
 async function fetchNext() {
+  // If the LLM provider has not finished initializing (first cold load
+  // or right after a provider swap in Settings), wait for init() and
+  // then re-enter the same skeleton -> render flow.
   if (!state.ready || !state.generator) {
-    render();
-    return;
+    document.getElementById('app').innerHTML = renderExploreSkeleton();
+    await init();
+    if (state.currentAbort && state.currentAbort.signal.aborted) return;
+    if (!state.generator) {
+      document.getElementById('app').innerHTML = `
+        <section class="page page--explore">
+          <header class="page__header">
+            <h1 class="page__title">Explore Ideas</h1>
+            <p class="page__subtitle">Discover research questions that interest you</p>
+          </header>
+          ${emptyState('😕', 'Provider not ready', 'Please retry in a moment.',
+            `<button class="btn btn--primary" id="retry" type="button">Retry</button>`)}
+          ${bottomNav('explore')}
+        </section>
+      `;
+      const retry = document.getElementById('retry');
+      if (retry) retry.addEventListener('click', fetchNext);
+      return;
+    }
   }
+
   // Cancel the previous request
   if (state.currentAbort) {
     try { state.currentAbort.abort(); } catch (_) {}
@@ -479,6 +643,74 @@ async function fetchNext() {
     `;
     const retry = document.getElementById('retry');
     if (retry) retry.addEventListener('click', fetchNext);
+  }
+}
+
+/**
+ * Run a text/voice search and render the matched idea, the no-match
+ * empty state, or an error empty state. Mirrors the skeleton/replace
+ * lifecycle of fetchNext().
+ * @param {string} rawQuery
+ */
+async function runSearch(rawQuery) {
+  if (!state.ready || !state.generator) {
+    render();
+    return;
+  }
+  if (state.currentAbort) {
+    try { state.currentAbort.abort(); } catch (_) {}
+  }
+  const ac = new AbortController();
+  state.currentAbort = ac;
+
+  const profile = state.storage.getProfile();
+  if (!profile) {
+    render();
+    return;
+  }
+
+  // Skeleton first
+  document.getElementById('app').innerHTML = renderExploreSkeleton();
+
+  try {
+    const idea = await state.generator.nextWithQuery(profile, rawQuery, ac.signal);
+    if (ac.signal.aborted) return;
+    state.current = idea;
+    document.getElementById('app').innerHTML = renderExploreIdea(idea);
+    bindExploreIdeaEvents();
+  } catch (err) {
+    if (ac.signal.aborted) return;
+    const msg = err && err.message ? String(err.message) : String(err);
+    // Recognizable no-match message -> dedicated empty state with "Surprise me"
+    if (/^No idea matched /.test(msg)) {
+      const m = msg.match(/^No idea matched (.*)$/);
+      const q = m ? m[1].replace(/^["']|["']$/g, '') : rawQuery;
+      state.current = null;
+      document.getElementById('app').innerHTML = renderExploreNoMatch(q);
+      bindExploreNoMatchEvents();
+      return;
+    }
+    if (err && (err.name === 'AbortError' || /aborted/i.test(msg))) return;
+    console.error(err);
+    state.current = null;
+    document.getElementById('app').innerHTML = `
+      <section class="page page--explore">
+        <header class="page__header">
+          <h1 class="page__title">Explore Ideas</h1>
+          <p class="page__subtitle">Discover research questions that interest you</p>
+        </header>
+        ${renderSearchRow(rawQuery)}
+        ${emptyState(
+          '😕',
+          'Search failed',
+          esc(msg),
+          `<button class="btn btn--primary" id="retry-search" type="button">Try again</button>`
+        )}
+        ${bottomNav('explore')}
+      </section>
+    `;
+    const retry = document.getElementById('retry-search');
+    if (retry) retry.addEventListener('click', () => runSearch(rawQuery));
   }
 }
 
@@ -789,60 +1021,10 @@ function render() {
     const profile = state.storage.getProfile();
     if (!profile) {
       app.innerHTML = renderExploreEmpty({ field: '?', direction: '?', age: '?' });
-    } else if (!state.ready) {
-      app.innerHTML = renderExploreSkeleton();
-      // Wait for init to finish before fetching
-      init().then(() => {
-        if (state.currentAbort && state.currentAbort.signal.aborted) return;
-        const ac = new AbortController();
-        state.currentAbort = ac;
-        state.generator.next(profile, ac.signal)
-          .then((idea) => {
-            if (ac.signal.aborted) return;
-            state.current = idea;
-            app.innerHTML = renderExploreIdea(idea);
-            bindExploreIdeaEvents();
-          })
-          .catch((err) => {
-            if (ac.signal.aborted) return;
-            console.error(err);
-            app.innerHTML = `
-              <section class="page page--explore">
-                <header class="page__header">
-                  <h1 class="page__title">Explore Ideas</h1>
-                  <p class="page__subtitle">Discover research questions that interest you</p>
-                </header>
-                ${emptyState('😕', 'Failed to generate idea', esc(err.message || String(err)))}
-                ${bottomNav('explore')}
-              </section>
-            `;
-          });
-      });
     } else {
-      app.innerHTML = renderExploreSkeleton();
-      const ac = new AbortController();
-      state.currentAbort = ac;
-      state.generator.next(profile, ac.signal)
-        .then((idea) => {
-          if (ac.signal.aborted) return;
-          state.current = idea;
-          app.innerHTML = renderExploreIdea(idea);
-          bindExploreIdeaEvents();
-        })
-        .catch((err) => {
-          if (ac.signal.aborted) return;
-          console.error(err);
-          app.innerHTML = `
-            <section class="page page--explore">
-              <header class="page__header">
-                <h1 class="page__title">Explore Ideas</h1>
-                <p class="page__subtitle">Discover research questions that interest you</p>
-              </header>
-              ${emptyState('😕', 'Failed to generate idea', esc(err.message || String(err)))}
-              ${bottomNav('explore')}
-            </section>
-          `;
-        });
+      // Delegate to fetchNext: it handles the !state.ready case (awaits init)
+      // and otherwise renders the skeleton -> idea -> feedback events flow.
+      fetchNext();
     }
   } else if (route === '/saved') {
     app.innerHTML = renderSaved();

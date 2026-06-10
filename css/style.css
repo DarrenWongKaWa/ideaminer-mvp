@@ -953,7 +953,174 @@ select.form__input {
 }
 
 /* ------------------------------------------------------------------
- * 16) Reduced motion (system preference)
+ * 16) Search row (Explore Ideas)
+ * ------------------------------------------------------------------ */
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  margin-bottom: var(--sp-3);
+  position: relative;
+}
+
+.search__icon {
+  position: absolute;
+  left: var(--sp-3);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 16px;
+  line-height: 1;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.search__input {
+  flex: 1 1 auto;
+  min-width: 0;          /* allow shrinking inside flex */
+  height: 44px;
+  padding: 0 96px 0 36px;  /* room for buttons on the right + icon on the left */
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg);
+  font-size: 14.5px;
+  outline: none;
+  transition: border-color var(--dur) var(--ease),
+              box-shadow var(--dur) var(--ease),
+              background var(--dur) var(--ease);
+}
+
+.search__input:hover {
+  border-color: var(--border-strong);
+}
+
+.search__input:focus,
+.search__input:focus-visible {
+  border-color: var(--brand);
+  box-shadow: var(--focus-ring);
+  outline: none;
+}
+
+.search__input::placeholder {
+  color: var(--fg-faint);
+}
+
+.search__mic,
+.search__submit,
+.search__clear {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 32px;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--fg);
+  transition: background var(--dur) var(--ease),
+              color var(--dur) var(--ease),
+              transform var(--dur-fast) var(--ease);
+}
+
+.search__mic {
+  right: 92px;          /* sit to the left of the Search button */
+  width: 32px;
+  font-size: 16px;
+}
+
+.search__submit {
+  right: 40px;          /* sit to the left of the Clear button */
+  width: auto;
+  min-width: 56px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand);
+}
+
+.search__clear {
+  right: 6px;
+  width: 28px;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--fg-faint);
+}
+
+.search__mic:hover {
+  background: var(--bg-subtle);
+}
+
+.search__submit:hover {
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+}
+
+.search__clear:hover {
+  background: var(--bg-subtle);
+  color: var(--fg);
+}
+
+.search__mic:active,
+.search__submit:active,
+.search__clear:active {
+  transform: translateY(-50%) scale(0.94);
+}
+
+/* Reuse the .is-recording pulse defined for .form__mic so the search
+   mic looks identical when listening. */
+.search__mic.is-recording {
+  background: var(--danger);
+  color: var(--fg-on-brand);
+  animation: pulseRecording 1.2s var(--ease) infinite;
+  box-shadow: 0 0 0 4px rgba(255, 59, 48, 0.18);
+}
+
+.search__match-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 var(--sp-3);
+  padding: 4px 10px;
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 500;
+  width: max-content;
+  max-width: 100%;
+}
+
+.search__match-badge em {
+  font-style: normal;
+  color: var(--fg);
+  margin-left: 2px;
+  word-break: break-word;
+}
+
+/* Narrow screens (320-360 px): hide the "Search" text label and
+   shrink padding so the row does not overflow. */
+@media (max-width: 360px) {
+  .search__input {
+    padding-right: 120px;       /* mic (32) + submit (~56) + clear (28) + gaps */
+    font-size: 14px;
+  }
+  .search__mic { right: 72px; }
+  .search__submit {
+    right: 36px;
+    min-width: 0;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+  .search__clear { right: 4px; }
+}
+
+/* ------------------------------------------------------------------
+ * 17) Reduced motion (system preference)
  * ------------------------------------------------------------------ */
 @media (prefers-reduced-motion: reduce) {
   *,
