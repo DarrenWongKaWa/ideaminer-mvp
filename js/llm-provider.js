@@ -1,31 +1,31 @@
 /**
  * llm-provider.js
  * ------------------------------------------------------------
- * 抽象 LLMProvider 接口 + MockLLMProvider 实现 + createProvider 工厂。
+ * Abstract LLMProvider interface + MockLLMProvider implementation + createProvider factory.
  *
- * 抽象点：
- *  - 替换为真实 LLM 时，只需 new 一个新的 LLMProvider 子类
- *    （例如 OpenAILLMProvider、ClaudeLLMProvider），传入 app.js 即可。
- *  - 真实 LLM 应当支持 AbortSignal（signal.aborted === true 时立刻抛错），
- *    以便页面切换时能取消正在进行的请求。
- *  - 返回的 IdeaDraft 中不应包含 id / field —— 这些是数据库/档案
- *    元数据，调用方（IdeaGenerator）会负责注入。
+ * Extension points:
+ *  - To replace with a real LLM, simply instantiate a new LLMProvider subclass
+ *    (e.g. OpenAILLMProvider, ClaudeLLMProvider) and pass it into app.js.
+ *  - Real LLMs should support AbortSignal (throw immediately when signal.aborted === true)
+ *    so that in-flight requests can be cancelled on page switch.
+ *  - The returned IdeaDraft should NOT include id / field -- those are database/archive
+ *    metadata; the caller (IdeaGenerator) will inject them.
  * ------------------------------------------------------------
  */
 
 /**
  * @typedef {Object} ResearchProfile
- * @property {string} field       学科领域，例如 "物理学"
- * @property {string} direction   具体研究方向，例如 "量子几何"
- * @property {string} age         研究年龄，例如 "博士"
+ * @property {string} field       Discipline, e.g. "Physics"
+ * @property {string} direction   Specific research direction, e.g. "quantum geometry"
+ * @property {string} age         Career stage, e.g. "PhD"
  */
 
 /**
  * @typedef {Object} IdeaDraft
- * @property {string} question     核心科学问题
- * @property {string} background   研究背景与知识缺口
- * @property {string} significance 选题意义
- * @property {string[]} methods   步骤化研究方案
+ * @property {string} question     Core scientific question
+ * @property {string} background   Research background and knowledge gap
+ * @property {string} significance Why solving this matters
+ * @property {string[]} methods   Step-by-step research plan
  */
 
 export class LLMProvider {
@@ -41,7 +41,7 @@ export class LLMProvider {
 
 export class MockLLMProvider extends LLMProvider {
   /**
-   * @param {string} ideasPath 相对路径，例如 "data/mock-ideas.json"
+   * @param {string} ideasPath Relative path, e.g. "data/mock-ideas.json"
    */
   constructor(ideasPath) {
     super();
@@ -76,7 +76,7 @@ export class MockLLMProvider extends LLMProvider {
    * @returns {Promise<IdeaDraft>}
    */
   async generateIdea(profile, signal) {
-    // 1. 模拟 400-800ms 的 LLM 推理延迟
+    // 1. Simulate 400-800ms of LLM inference latency
     const latency = 400 + Math.random() * 400;
     await new Promise((resolve, reject) => {
       const t = setTimeout(resolve, latency);
@@ -90,21 +90,21 @@ export class MockLLMProvider extends LLMProvider {
       }
     });
 
-    // 2. 加载 mock ideas
+    // 2. Load mock ideas
     const all = await this._load();
     if (all.length === 0) {
       throw new Error('MockLLMProvider: no ideas available in mock-ideas.json');
     }
 
-    // 3. 按 profile.field 过滤；若没有匹配则退回到全集
+    // 3. Filter by profile.field; fall back to the full set on no match
     const field = (profile && profile.field) || '';
     let pool = all.filter((i) => i.field === field);
     if (pool.length === 0) pool = all;
 
-    // 4. 随机选一条
+    // 4. Pick a random one
     const pick = pool[Math.floor(Math.random() * pool.length)];
 
-    // 5. 剥掉 id / field（这些是数据档案元数据，调用方注入）
+    // 5. Strip id / field (these are archive metadata; the caller injects them)
     return {
       question: pick.question,
       background: pick.background,
@@ -117,15 +117,15 @@ export class MockLLMProvider extends LLMProvider {
 /**
  * @typedef {Object} ProviderConfig
  * @property {'mock'|'openai'} type
- * @property {string} [ideasPath]       mock 时使用，默认 'data/mock-ideas.json'
- * @property {{endpoint: string, apiKey: string, model: string, temperature?: number, timeoutMs?: number}} [openai]  openai 时必填
+ * @property {string} [ideasPath]       Used for the mock provider, default 'data/mock-ideas.json'
+ * @property {{endpoint: string, apiKey: string, model: string, temperature?: number, timeoutMs?: number}} [openai]  Required when type is 'openai'
  */
 
 /**
- * 根据配置构造 provider。当前支持 mock / openai。
+ * Construct a provider from a config object. Currently supports 'mock' and 'openai'.
  *
- * 注意：返回 Promise<LLMProvider>（openai 分支用 dynamic import，
- * 这样 mock-only 用户不会下载 openai-llm-provider.js 的代码）。
+ * Note: returns Promise<LLMProvider> (the 'openai' branch uses dynamic import,
+ * so mock-only users do not download the openai-llm-provider.js source).
  *
  * @param {ProviderConfig} config
  * @returns {Promise<LLMProvider>}

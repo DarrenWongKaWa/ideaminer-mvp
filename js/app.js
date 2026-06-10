@@ -1,19 +1,19 @@
 /**
  * app.js
  * ------------------------------------------------------------
- * 路由器 + 应用引导。
+ * Router + application bootstrap.
  *
- * 路由：
- *   #/profile   完善科研画像（form）
- *   #/explore   灵感探索（idea card + 反馈按钮）
- *   #/saved     收藏（已保存的 idea 列表）
- *   #/my        我的（profile + 反馈历史）
- *   #/settings  设置（LLM provider 选择 / API 配置 / 测试）
+ * Routes:
+ *   #/profile   Refine Your Research Profile（form）
+ *   #/explore   Explore Ideas (idea card + feedback buttons)
+ *   #/saved     Saved (list of saved ideas)
+ *   #/my        Profile (profile + feedback history)
+ *   #/settings  Settings (LLM provider selection / API config / test)
  *
- * 扩展点：
- *   1. createProvider() 工厂可换 mock / openai
- *   2. LocalStorageProvider 换成 ApiStorageProvider（保持 sync 接口）
- *   3. MockReviewer 换成 LLM-as-judge
+ * Extension points:
+ *   1. createProvider() factory can swap mock / openai
+ *   2. Replace LocalStorageProvider with ApiStorageProvider (preserves sync interface)
+ *   3. Replace MockReviewer with LLM-as-judge
  * ------------------------------------------------------------
  */
 
@@ -22,7 +22,7 @@ import { LocalStorageProvider } from './storage.js';
 import { IdeaGenerator } from './idea-generator.js';
 import { VoiceInput } from './voice.js';
 
-// ---------- LLM provider 配置（持久化） ----------
+// ---------- LLM provider config (persisted) ----------
 const PROVIDER_STORAGE_KEY = 'ideaminer.provider.v1';
 
 /**
@@ -34,7 +34,7 @@ const PROVIDER_STORAGE_KEY = 'ideaminer.provider.v1';
  */
 
 /**
- * 读取并清理 provider 配置（丢掉空字段、默认 model 等）。
+ * Read and clean provider config (drop empty fields, apply default model, etc.).
  * @returns {ProviderSettings}
  */
 function loadProviderSettings() {
@@ -60,18 +60,18 @@ function saveProviderSettings(cfg) {
   } catch (_) { /* ignore quota */ }
 }
 
-// ---------- 全局状态 ----------
+// ---------- Global state ----------
 const state = {
   storage: new LocalStorageProvider(),
   voice: new VoiceInput(),
-  llm: null,            // 由 init() 通过 createProvider 构造
-  generator: null,      // 由 init() 构造（依赖 llm）
-  ready: false,         // init() 完成
-  current: null,        // 当前展示的 ReviewedIdea
-  currentAbort: null,   // 当前 IdeaGenerator.next() 的 AbortController
+  llm: null,            // Built by init() via createProvider
+  generator: null,      // Built by init() (depends on llm)
+  ready: false,         // init() complete
+  current: null,        // Currently displayed ReviewedIdea
+  currentAbort: null,   // AbortController for the current IdeaGenerator.next()
 };
 
-// ---------- 工具：安全 HTML 字符串转义 ----------
+// ---------- Util: safe HTML string escaping ----------
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;')
@@ -81,7 +81,7 @@ function esc(s) {
     .replace(/'/g, '&#39;');
 }
 
-// ---------- 工具：toast ----------
+// ---------- Util: toast ----------
 let toastTimer = null;
 function toast(msg, kind) {
   let t = document.getElementById('toast');
@@ -91,7 +91,7 @@ function toast(msg, kind) {
     t.className = 'toast';
     document.body.appendChild(t);
   }
-  // 提取 emoji 图标（消息首字符若是 emoji，作为图标单独渲染）
+  // Extract emoji icon (if the first char of the message is an emoji, render it as the leading icon)
   let icon = '';
   let text = msg;
   const emojiMatch = /^([\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}])\s*/u.exec(msg);
@@ -111,7 +111,7 @@ function toast(msg, kind) {
   toastTimer = setTimeout(() => t.classList.remove('toast--show'), 1800);
 }
 
-// ---------- 工具：剪贴板 ----------
+// ---------- Util: clipboard ----------
 async function copyText(text) {
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -134,31 +134,31 @@ async function copyText(text) {
   }
 }
 
-// ---------- 渲染：底部 nav（4 个 item：探索 / 收藏 / 我的 / 设置） ----------
+// ---------- Render: bottom nav (4 items: Explore / Saved / Profile / Settings) ----------
 function bottomNav(active) {
   return `
-    <nav class="bottom-nav" role="navigation" aria-label="主导航">
-      <a class="bottom-nav__item ${active === 'explore' ? 'is-active' : ''}" href="#/explore" aria-label="探索">
+    <nav class="bottom-nav" role="navigation" aria-label="Main navigation">
+      <a class="bottom-nav__item ${active === 'explore' ? 'is-active' : ''}" href="#/explore" aria-label="Explore">
         <span class="bottom-nav__icon" aria-hidden="true">🧭</span>
-        <span class="bottom-nav__label">探索</span>
+        <span class="bottom-nav__label">Explore</span>
       </a>
-      <a class="bottom-nav__item ${active === 'saved' ? 'is-active' : ''}" href="#/saved" aria-label="收藏">
+      <a class="bottom-nav__item ${active === 'saved' ? 'is-active' : ''}" href="#/saved" aria-label="Saved">
         <span class="bottom-nav__icon" aria-hidden="true">🗂️</span>
-        <span class="bottom-nav__label">收藏</span>
+        <span class="bottom-nav__label">Saved</span>
       </a>
-      <a class="bottom-nav__item ${active === 'my' ? 'is-active' : ''}" href="#/my" aria-label="我的">
+      <a class="bottom-nav__item ${active === 'my' ? 'is-active' : ''}" href="#/my" aria-label="Profile">
         <span class="bottom-nav__icon" aria-hidden="true">👤</span>
-        <span class="bottom-nav__label">我的</span>
+        <span class="bottom-nav__label">Profile</span>
       </a>
-      <a class="bottom-nav__item ${active === 'settings' ? 'is-active' : ''}" href="#/settings" aria-label="设置">
+      <a class="bottom-nav__item ${active === 'settings' ? 'is-active' : ''}" href="#/settings" aria-label="Settings">
         <span class="bottom-nav__icon" aria-hidden="true">⚙️</span>
-        <span class="bottom-nav__label">设置</span>
+        <span class="bottom-nav__label">Settings</span>
       </a>
     </nav>
   `;
 }
 
-// ---------- 通用空状态 ----------
+// ---------- Generic empty state ----------
 function emptyState(icon, title, body, cta) {
   return `
     <div class="empty">
@@ -170,20 +170,20 @@ function emptyState(icon, title, body, cta) {
   `;
 }
 
-// ---------- 渲染：完善科研画像 (#/profile) ----------
+// ---------- Render: Refine Your Research Profile (#/profile) ----------
 function renderProfile() {
   const profile = state.storage.getProfile();
   const fieldOptions = [
-    '物理学', '化学', '生物学', '计算机科学', '数学',
-    '材料科学', '地球科学', '心理学', '经济学', '其他',
+    'Physics', 'Chemistry', 'Biology', 'Computer Science', 'Mathematics',
+    'Materials Science', 'Earth Science', 'Psychology', 'Economics', 'Other',
   ];
-  const ageOptions = ['本科', '硕士', '博士', '博士后', '教授', '其他'];
+  const ageOptions = ['Undergraduate', 'Master's', 'PhD', 'Postdoc', 'Professor', 'Other'];
 
   const opts = (arr, sel) => arr.map((x) =>
     `<option value="${esc(x)}" ${x === sel ? 'selected' : ''}>${esc(x)}</option>`
   ).join('');
 
-  const placeholder = profile ? '' : 'placeholder="例如：机器学习、量子计算"';
+  const placeholder = profile ? '' : 'placeholder="e.g. machine learning, quantum computing"';
   const val = profile ? esc(profile.direction || '') : '';
 
   const voiceSupported = state.voice.isSupported();
@@ -191,25 +191,25 @@ function renderProfile() {
   return `
     <section class="page page--profile">
       <header class="page__header">
-        <h1 class="page__title">完善科研画像</h1>
-        <p class="page__subtitle">让我们更懂你的研究方向</p>
+        <h1 class="page__title">Refine Your Research Profile</h1>
+        <p class="page__subtitle">Tell us about your research so we can tailor ideas for you</p>
       </header>
 
       <form id="profile-form" class="form" novalidate>
         <label class="form__field">
-          <span class="form__label">领域</span>
+          <span class="form__label">Field</span>
           <select class="form__input" name="field" required>
-            <option value="" disabled ${profile ? '' : 'selected'}>选择您的学科</option>
+            <option value="" disabled ${profile ? '' : 'selected'}>Select your field</option>
             ${opts(fieldOptions, profile && profile.field)}
           </select>
         </label>
 
         <label class="form__field">
-          <span class="form__label">具体研究方向</span>
+          <span class="form__label">Research direction</span>
           <div class="form__input-wrap">
             <input class="form__input" name="direction" type="text" ${placeholder} value="${val}" />
             ${voiceSupported ? `
-              <button type="button" class="form__mic" data-voice-target="direction" aria-label="语音输入研究方向">
+              <button type="button" class="form__mic" data-voice-target="direction" aria-label="Voice input for research direction">
                 <span aria-hidden="true">🎤</span>
               </button>
               <span class="voice-dots" data-voice-dots hidden aria-hidden="true">
@@ -224,14 +224,14 @@ function renderProfile() {
         </label>
 
         <label class="form__field">
-          <span class="form__label">研究年龄</span>
+          <span class="form__label">Career stage</span>
           <select class="form__input" name="age" required>
-            <option value="" disabled ${profile && profile.age ? '' : 'selected'}>请选择研究年龄</option>
+            <option value="" disabled ${profile && profile.age ? '' : 'selected'}>Please choose a career stage</option>
             ${opts(ageOptions, profile && profile.age)}
           </select>
         </label>
 
-        <button type="submit" class="btn btn--primary">继续</button>
+        <button type="submit" class="btn btn--primary">Continue</button>
       </form>
     </section>
   `;
@@ -249,15 +249,15 @@ function bindProfileEvents() {
       direction: String(fd.get('direction') || '').trim(),
       age: String(fd.get('age') || '').trim(),
     };
-    if (!profile.field) { toast('⚠️ 请选择学科领域', 'warn'); return; }
-    if (!profile.direction) { toast('⚠️ 请填写研究方向', 'warn'); return; }
-    if (!profile.age) { toast('⚠️ 请选择研究年龄', 'warn'); return; }
+    if (!profile.field) { toast('⚠️ Please choose a field', 'warn'); return; }
+    if (!profile.direction) { toast('⚠️ Please fill in your research direction', 'warn'); return; }
+    if (!profile.age) { toast('⚠️ Please choose a career stage', 'warn'); return; }
 
     state.storage.setProfile(profile);
     location.hash = '#/explore';
   });
 
-  // 语音输入按钮
+  // Voice input button
   form.querySelectorAll('[data-voice-target]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const targetName = btn.getAttribute('data-voice-target');
@@ -288,13 +288,13 @@ function bindProfileEvents() {
           if (dots) dots.hidden = true;
           state.voice._currentTarget = null;
           if (err === 'not-allowed' || err === 'service-not-allowed') {
-            toast('⚠️ 请允许使用麦克风（浏览器设置 → 网站权限）', 'warn');
+            toast('⚠️ Please allow microphone access (Browser Settings → Site permissions)', 'warn');
           } else if (err === 'no-speech') {
-            toast('⚠️ 没听到声音，请重试', 'warn');
+            toast("⚠️ Didn't hear anything, please try again", 'warn');
           } else if (err === 'audio-capture') {
-            toast('⚠️ 未找到麦克风设备', 'error');
+            toast('⚠️ No microphone device found', 'error');
           } else if (err !== 'aborted') {
-            toast('⚠️ 语音输入失败：' + err, 'error');
+            toast('⚠️ Voice input failed: ' + err, 'error');
           }
         }
       );
@@ -302,13 +302,13 @@ function bindProfileEvents() {
   });
 }
 
-// ---------- 渲染：灵感探索 (#/explore) ----------
+// ---------- Render: Explore Ideas (#/explore) ----------
 function renderExploreSkeleton() {
   return `
     <section class="page page--explore">
       <header class="page__header">
-        <h1 class="page__title">灵感探索</h1>
-        <p class="page__subtitle">发现感兴趣的科研问题</p>
+        <h1 class="page__title">Explore Ideas</h1>
+        <p class="page__subtitle">Discover research questions that interest you</p>
       </header>
       <div class="card card--loading" aria-busy="true">
         <div class="card__skeleton">
@@ -317,7 +317,7 @@ function renderExploreSkeleton() {
           <span class="skeleton-bar skeleton-bar--md"></span>
           <span class="skeleton-bar skeleton-bar--sm"></span>
         </div>
-        <p class="card__loading-text">正在为你生成灵感…</p>
+        <p class="card__loading-text">Generating an idea for you…</p>
       </div>
       ${bottomNav('explore')}
     </section>
@@ -333,39 +333,39 @@ function renderExploreIdea(idea) {
   return `
     <section class="page page--explore">
       <header class="page__header">
-        <h1 class="page__title">灵感探索</h1>
-        <p class="page__subtitle">发现感兴趣的科研问题</p>
+        <h1 class="page__title">Explore Ideas</h1>
+        <p class="page__subtitle">Discover research questions that interest you</p>
       </header>
 
       <article class="card" data-idea-id="${esc(idea.id)}">
         <h2 class="card__question">${esc(idea.question)}</h2>
 
-        <div class="card__badges" aria-label="评审分数">
-          <span class="badge badge--innovation" title="创新">创新 ${review.innovation}</span>
-          <span class="badge badge--feasibility" title="可行">可行 ${review.feasibility}</span>
-          <span class="badge badge--importance" title="重要">重要 ${review.importance}</span>
+        <div class="card__badges" aria-label="Review scores">
+          <span class="badge badge--innovation" title="Innovation">Innovation ${review.innovation}</span>
+          <span class="badge badge--feasibility" title="Feasibility">Feasibility ${review.feasibility}</span>
+          <span class="badge badge--importance" title="Importance">Importance ${review.importance}</span>
         </div>
 
         <section class="card__section">
-          <h3 class="card__section-title">📋 问题背景</h3>
+          <h3 class="card__section-title">📋 Background</h3>
           <p class="card__section-body">${esc(idea.background)}</p>
         </section>
 
         <section class="card__section">
-          <h3 class="card__section-title">💡 问题意义</h3>
+          <h3 class="card__section-title">💡 Why it matters</h3>
           <p class="card__section-body">${esc(idea.significance)}</p>
         </section>
 
         <section class="card__section">
-          <h3 class="card__section-title">🔬 研究方法</h3>
+          <h3 class="card__section-title">🔬 Methods</h3>
           <ol class="methods">${methods}</ol>
         </section>
 
-        <div class="feedback" role="group" aria-label="反馈">
-          <button type="button" class="feedback__btn" data-fb="dislike">👎 不喜欢</button>
-          <button type="button" class="feedback__btn" data-fb="unrelated">🚫 不相关</button>
-          <button type="button" class="feedback__btn feedback__btn--like" data-fb="like">❤️ 喜欢</button>
-          <button type="button" class="feedback__btn" data-fb="copy">📋 复制</button>
+        <div class="feedback" role="group" aria-label="Feedback">
+          <button type="button" class="feedback__btn" data-fb="dislike">👎 Dislike</button>
+          <button type="button" class="feedback__btn" data-fb="unrelated">🚫 Unrelated</button>
+          <button type="button" class="feedback__btn feedback__btn--like" data-fb="like">❤️ Like</button>
+          <button type="button" class="feedback__btn" data-fb="copy">📋 Copy</button>
         </div>
       </article>
 
@@ -378,14 +378,14 @@ function renderExploreEmpty(profile) {
   return `
     <section class="page page--explore">
       <header class="page__header">
-        <h1 class="page__title">灵感探索</h1>
-        <p class="page__subtitle">发现感兴趣的科研问题</p>
+        <h1 class="page__title">Explore Ideas</h1>
+        <p class="page__subtitle">Discover research questions that interest you</p>
       </header>
       ${emptyState(
         '🔭',
-        '尚未设置研究画像',
-        `请先<a class="link" href="#/profile">完善科研画像</a>，我们会基于你的领域与方向生成灵感。`,
-        `<a class="btn btn--primary" href="#/profile">去设置</a>`
+        'No research profile yet',
+        `Please <a class="link" href="#/profile">set up your research profile</a> first. We will generate ideas based on your field and direction.`,
+        `<a class="btn btn--primary" href="#/profile">Set up now</a>`
       )}
       ${bottomNav('explore')}
     </section>
@@ -402,14 +402,14 @@ function bindExploreIdeaEvents() {
       const fb = btn.getAttribute('data-fb');
       if (fb === 'copy') {
         const text = collectIdeaText(card);
-        copyText(text).then((ok) => toast(ok ? '✅ 已复制' : '❌ 复制失败', ok ? 'success' : 'error'));
+        copyText(text).then((ok) => toast(ok ? '✅ Copied' : '❌ Copy failed', ok ? 'success' : 'error'));
         return;
       }
       if (fb === 'like') {
         const idea = state.current;
         if (idea) state.storage.saveIdea(idea);
         state.storage.recordFeedback(ideaId, 'like');
-        toast('✅ 已收藏', 'success');
+        toast('✅ Saved', 'success');
         fetchNext();
         return;
       }
@@ -427,7 +427,7 @@ function collectIdeaText(cardEl) {
   const methods = Array.from(cardEl.querySelectorAll('.methods__item'))
     .map((li, i) => `${i + 1}. ${li.textContent}`)
     .join('\n');
-  return `问题：${q}\n\n背景：${bg}\n\n意义：${sig}\n\n研究方法：\n${methods}`;
+  return `Question: ${q}\n\nBackground: ${bg}\n\nSignificance: ${sig}\n\nMethods:\n${methods}`;
 }
 
 async function fetchNext() {
@@ -435,7 +435,7 @@ async function fetchNext() {
     render();
     return;
   }
-  // 中断上次请求
+  // Cancel the previous request
   if (state.currentAbort) {
     try { state.currentAbort.abort(); } catch (_) {}
   }
@@ -448,12 +448,12 @@ async function fetchNext() {
     return;
   }
 
-  // 先渲染 skeleton
+  // Render the skeleton first
   document.getElementById('app').innerHTML = renderExploreSkeleton();
 
   try {
     const idea = await state.generator.next(profile, ac.signal);
-    if (ac.signal.aborted) return;  // 用户已离开本页
+    if (ac.signal.aborted) return;  // User has left this page
     state.current = idea;
     document.getElementById('app').innerHTML = renderExploreIdea(idea);
     bindExploreIdeaEvents();
@@ -461,18 +461,18 @@ async function fetchNext() {
     if (ac.signal.aborted) return;
     console.error(err);
     const isAbort = err && (err.name === 'AbortError' || /aborted/i.test(String(err.message)));
-    const errMsg = isAbort ? '已取消' : (err.message || String(err));
+    const errMsg = isAbort ? 'Cancelled' : (err.message || String(err));
     document.getElementById('app').innerHTML = `
       <section class="page page--explore">
         <header class="page__header">
-          <h1 class="page__title">灵感探索</h1>
-          <p class="page__subtitle">发现感兴趣的科研问题</p>
+          <h1 class="page__title">Explore Ideas</h1>
+          <p class="page__subtitle">Discover research questions that interest you</p>
         </header>
         ${emptyState(
           '😕',
-          '生成灵感时出错',
+          'Failed to generate idea',
           esc(errMsg),
-          `<button class="btn btn--primary" id="retry">重试</button>`
+          `<button class="btn btn--primary" id="retry">Retry</button>`
         )}
         ${bottomNav('explore')}
       </section>
@@ -482,21 +482,21 @@ async function fetchNext() {
   }
 }
 
-// ---------- 渲染：收藏 (#/saved) ----------
+// ---------- Render: Saved (#/saved) ----------
 function renderSaved() {
   const list = state.storage.getSavedIdeas();
   if (list.length === 0) {
     return `
       <section class="page page--saved">
         <header class="page__header">
-          <h1 class="page__title">收藏</h1>
-          <p class="page__subtitle">你保存的灵感</p>
+          <h1 class="page__title">Saved</h1>
+          <p class="page__subtitle">Ideas you have saved</p>
         </header>
         ${emptyState(
           '🗂️',
-          '还没有收藏的灵感',
-          '在灵感探索页遇到喜欢的选题，点 ❤️ 即可收藏。',
-          `<a class="btn btn--primary" href="#/explore">去探索</a>`
+          'No saved ideas yet',
+          "Find an idea you like on the Explore Ideas page and tap \u2764\ufe0f to save it.",
+          `<a class="btn btn--primary" href="#/explore">Start exploring</a>`
         )}
         ${bottomNav('saved')}
       </section>
@@ -508,10 +508,10 @@ function renderSaved() {
       <h2 class="card__question">${esc(it.question)}</h2>
       <p class="card__excerpt">${esc((it.background || '').slice(0, 80))}${(it.background || '').length > 80 ? '…' : ''}</p>
       <div class="card__meta">
-        ${it.review ? `<span class="badge badge--innovation">创新 ${it.review.innovation}</span>
-        <span class="badge badge--feasibility">可行 ${it.review.feasibility}</span>
-        <span class="badge badge--importance">重要 ${it.review.importance}</span>` : ''}
-        <button type="button" class="btn btn--ghost" data-remove="${esc(it.id)}">删除</button>
+        ${it.review ? `<span class="badge badge--innovation">Innovation ${it.review.innovation}</span>
+        <span class="badge badge--feasibility">Feasibility ${it.review.feasibility}</span>
+        <span class="badge badge--importance">Importance ${it.review.importance}</span>` : ''}
+        <button type="button" class="btn btn--ghost" data-remove="${esc(it.id)}">Remove</button>
       </div>
     </article>
   `).join('');
@@ -519,8 +519,8 @@ function renderSaved() {
   return `
     <section class="page page--saved">
       <header class="page__header">
-        <h1 class="page__title">收藏</h1>
-        <p class="page__subtitle">共 ${list.length} 条</p>
+        <h1 class="page__title">Saved</h1>
+        <p class="page__subtitle">${list.length} total</p>
       </header>
       <div class="cards">${cards}</div>
       ${bottomNav('saved')}
@@ -534,12 +534,12 @@ function bindSavedEvents() {
       const id = btn.getAttribute('data-remove');
       state.storage.removeIdea(id);
       render();
-      toast('✅ 已删除', 'success');
+      toast('✅ Removed', 'success');
     });
   });
 }
 
-// ---------- 渲染：我的 (#/my) ----------
+// ---------- Render: Profile (#/my) ----------
 function renderMy() {
   const profile = state.storage.getProfile();
   const history = state.storage.getFeedbackHistory();
@@ -548,49 +548,49 @@ function renderMy() {
 
   const settings = loadProviderSettings();
   const providerLabel = settings.type === 'openai'
-    ? `OpenAI 兼容 · ${esc(settings.model || '?')}`
-    : 'Mock（内置 34 条）';
+    ? `OpenAI-compatible \u00b7 ${esc(settings.model || '?')}`
+    : 'Mock (34 built-in ideas)';
 
   return `
     <section class="page page--my">
       <header class="page__header">
-        <h1 class="page__title">我的</h1>
-        <p class="page__subtitle">个人资料与反馈历史</p>
+        <h1 class="page__title">Profile</h1>
+        <p class="page__subtitle">Your profile and feedback history</p>
       </header>
 
       <section class="card card--profile">
-        <h2 class="card__section-title">🪪 科研画像</h2>
+        <h2 class="card__section-title">🪪 Research Profile</h2>
         ${profile ? `
           <dl class="kv">
-            <dt>领域</dt><dd>${esc(profile.field)}</dd>
-            <dt>方向</dt><dd>${esc(profile.direction)}</dd>
-            <dt>研究年龄</dt><dd>${esc(profile.age)}</dd>
+            <dt>Field</dt><dd>${esc(profile.field)}</dd>
+            <dt>Direction</dt><dd>${esc(profile.direction)}</dd>
+            <dt>Career stage</dt><dd>${esc(profile.age)}</dd>
           </dl>
         ` : `
-          <p class="empty__body">尚未设置</p>
+          <p class="empty__body">Not set up yet</p>
         `}
-        <a class="btn btn--primary" href="#/profile">${profile ? '重新设置画像' : '去设置'}</a>
+        <a class="btn btn--primary" href="#/profile">${profile ? 'Edit profile' : 'Set up now'}</a>
       </section>
 
       <section class="card card--history">
-        <h2 class="card__section-title">📊 反馈统计</h2>
+        <h2 class="card__section-title">📊 Feedback Stats</h2>
         <dl class="kv">
-          <dt>❤️ 喜欢</dt><dd>${summary.like || 0}</dd>
-          <dt>👎 不喜欢</dt><dd>${summary.dislike || 0}</dd>
-          <dt>🚫 不相关</dt><dd>${summary.unrelated || 0}</dd>
-          <dt>总计</dt><dd>${history.length}</dd>
+          <dt>❤️ Like</dt><dd>${summary.like || 0}</dd>
+          <dt>👎 Dislike</dt><dd>${summary.dislike || 0}</dd>
+          <dt>🚫 Unrelated</dt><dd>${summary.unrelated || 0}</dd>
+          <dt>Total</dt><dd>${history.length}</dd>
         </dl>
       </section>
 
       <section class="card card--provider">
-        <h2 class="card__section-title">🤖 当前 LLM</h2>
+        <h2 class="card__section-title">🤖 Current LLM</h2>
         <p class="empty__body">${providerLabel}</p>
-        <a class="btn btn--ghost" href="#/settings">前往设置</a>
+        <a class="btn btn--ghost" href="#/settings">Go to settings</a>
       </section>
 
       <section class="card card--saved-list">
-        <h2 class="card__section-title">🗂️ 收藏夹</h2>
-        <p class="empty__body">共 ${state.storage.getSavedIdeas().length} 条 · <a class="link" href="#/saved">查看</a></p>
+        <h2 class="card__section-title">🗂️ Saved Ideas</h2>
+        <p class="empty__body">${state.storage.getSavedIdeas().length} total · <a class="link" href="#/saved">View</a></p>
       </section>
 
       ${bottomNav('my')}
@@ -598,7 +598,7 @@ function renderMy() {
   `;
 }
 
-// ---------- 渲染：设置 (#/settings) ----------
+// ---------- Render: Settings (#/settings) ----------
 function renderSettings() {
   const cfg = loadProviderSettings();
   const type = cfg.type || 'mock';
@@ -609,8 +609,8 @@ function renderSettings() {
   return `
     <section class="page page--settings">
       <header class="page__header">
-        <h1 class="page__title">设置</h1>
-        <p class="page__subtitle">选择 LLM 提供方</p>
+        <h1 class="page__title">Settings</h1>
+        <p class="page__subtitle">Select your LLM provider</p>
       </header>
 
       <div class="settings__section">
@@ -619,15 +619,15 @@ function renderSettings() {
           <label class="settings__option ${type === 'mock' ? 'is-selected' : ''}" data-option="mock">
             <input type="radio" name="provider" value="mock" ${type === 'mock' ? 'checked' : ''} />
             <div>
-              <span class="settings__option-label">Mock（内置 34 条）</span>
-              <span class="settings__option-desc">离线可用，无 API key，基于 data/mock-ideas.json。</span>
+              <span class="settings__option-label">Mock (34 built-in ideas)</span>
+              <span class="settings__option-desc">Works offline, no API key needed. Uses data/mock-ideas.json.</span>
             </div>
           </label>
           <label class="settings__option ${type === 'openai' ? 'is-selected' : ''}" data-option="openai">
             <input type="radio" name="provider" value="openai" ${type === 'openai' ? 'checked' : ''} />
             <div>
-              <span class="settings__option-label">OpenAI 兼容（你的 API）</span>
-              <span class="settings__option-desc">支持 OpenAI / DeepSeek / Moonshot / Ollama / LM Studio 等 /v1/chat/completions 端点。</span>
+              <span class="settings__option-label">OpenAI-compatible (your own API)</span>
+              <span class="settings__option-desc">Supports OpenAI, DeepSeek, Moonshot, Ollama, LM Studio, and any other endpoint that speaks the /v1/chat/completions protocol.</span>
             </div>
           </label>
 
@@ -644,19 +644,19 @@ function renderSettings() {
               <span class="form__label">Model</span>
               <input class="form__input" name="model" type="text" placeholder="gpt-4o-mini / deepseek-chat / ..." value="${esc(model)}" autocomplete="off" />
             </label>
-            <p class="settings__hint">API Key 仅保存在本机 localStorage，不会上传到任何服务端。</p>
+            <p class="settings__hint">Your API key is stored only in this browser's localStorage and is never uploaded anywhere.</p>
           </div>
 
           <div class="settings__row">
-            <button type="submit" class="btn btn--primary">保存</button>
-            <button type="button" class="btn btn--ghost" id="test-connection">测试连接</button>
+            <button type="submit" class="btn btn--primary">Save</button>
+            <button type="button" class="btn btn--ghost" id="test-connection">Test Connection</button>
           </div>
         </form>
       </div>
 
       <div class="settings__section">
-        <h2 class="settings__section-title">关于</h2>
-        <p class="empty__body">IdeaMiner MVP · 纯前端 · 数据保存在你的浏览器。</p>
+        <h2 class="settings__section-title">About</h2>
+        <p class="empty__body">IdeaMiner MVP \u00b7 pure-frontend \u00b7 your data stays in your browser.</p>
       </div>
 
       ${bottomNav('settings')}
@@ -668,7 +668,7 @@ function bindSettingsEvents() {
   const form = document.getElementById('settings-form');
   if (!form) return;
 
-  // 切换 provider 时展开/收起 openai 字段
+  // Show/hide OpenAI fields when switching provider
   const openaiFields = document.getElementById('openai-fields');
   const updateOptionStyles = () => {
     form.querySelectorAll('.settings__option').forEach((opt) => {
@@ -682,7 +682,7 @@ function bindSettingsEvents() {
     r.addEventListener('change', updateOptionStyles);
   });
 
-  // 保存
+  // Save
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
@@ -694,17 +694,17 @@ function bindSettingsEvents() {
       model:    String(fd.get('model')    || '').trim(),
     };
     if (type === 'openai') {
-      if (!next.endpoint) { toast('⚠️ 请填写 Endpoint URL', 'warn'); return; }
-      if (!next.apiKey)   { toast('⚠️ 请填写 API Key', 'warn'); return; }
-      if (!next.model)    { toast('⚠️ 请填写 Model', 'warn'); return; }
+      if (!next.endpoint) { toast('⚠️ Please fill in Endpoint URL', 'warn'); return; }
+      if (!next.apiKey)   { toast('⚠️ Please fill in API Key', 'warn'); return; }
+      if (!next.model)    { toast('⚠️ Please fill in Model', 'warn'); return; }
     }
     saveProviderSettings(next);
-    toast('✅ 已保存', 'success');
-    // 重新构造 generator（llm 替换）
+    toast('✅ Saved', 'success');
+    // Rebuild the generator (llm was swapped)
     await rebuildProvider(next);
   });
 
-  // 测试连接
+  // Test Connection
   const testBtn = document.getElementById('test-connection');
   if (testBtn) {
     testBtn.addEventListener('click', async () => {
@@ -718,28 +718,28 @@ function bindSettingsEvents() {
       };
       if (type === 'openai') {
         if (!cfg.endpoint || !cfg.apiKey || !cfg.model) {
-          toast('⚠️ 请先填写完整 OpenAI 配置', 'warn');
+          toast('⚠️ Please fill in the full OpenAI config first', 'warn');
           return;
         }
       }
       testBtn.disabled = true;
       const originalLabel = testBtn.textContent;
-      testBtn.textContent = '测试中…';
+      testBtn.textContent = 'Testing\u2026';
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), 35000);
       try {
-        const profile = state.storage.getProfile() || { field: '物理学', direction: '量子几何', age: '博士' };
+        const profile = state.storage.getProfile() || { field: 'Physics', direction: 'quantum geometry', age: 'PhD' };
         const provider = await createProvider(cfg);
         const draft = await provider.generateIdea(profile, ac.signal);
         clearTimeout(timer);
-        toast(`✅ 连接成功：${esc(draft.question.slice(0, 18))}…`, 'success');
+        toast(`✅ Connection successful：${esc(draft.question.slice(0, 18))}…`, 'success');
       } catch (err) {
         clearTimeout(timer);
         const msg = (err && err.message) || String(err);
         if (err && (err.name === 'AbortError' || /aborted/i.test(msg))) {
-          toast('⚠️ 测试超时已取消', 'warn');
+          toast('⚠️ Test timed out and was cancelled', 'warn');
         } else {
-          toast('❌ 连接失败：' + esc(msg.slice(0, 80)), 'error');
+          toast('❌ Connection failed：' + esc(msg.slice(0, 80)), 'error');
         }
       } finally {
         testBtn.disabled = false;
@@ -749,7 +749,7 @@ function bindSettingsEvents() {
   }
 }
 
-// ---------- 重建 provider（设置保存 / 启动时） ----------
+// ---------- Rebuild provider (Settings save / boot) ----------
 async function rebuildProvider(cfg) {
   try {
     const provider = await createProvider(cfg);
@@ -757,20 +757,20 @@ async function rebuildProvider(cfg) {
     state.generator = new IdeaGenerator(state.llm, undefined, state.storage);
   } catch (err) {
     console.error('rebuildProvider failed:', err);
-    toast('❌ ' + (err.message || 'provider 初始化失败'), 'error');
+    toast('❌ ' + (err.message || 'provider initialization failed'), 'error');
   }
 }
 
-// ---------- 应用初始化 ----------
+// ---------- Application initialization ----------
 async function init() {
   const cfg = loadProviderSettings();
   await rebuildProvider(cfg);
   state.ready = true;
 }
 
-// ---------- 路由器 ----------
+// ---------- Router ----------
 function render() {
-  // 中断进行中的请求
+  // Cancel any in-flight request
   if (state.currentAbort) {
     try { state.currentAbort.abort(); } catch (_) {}
     state.currentAbort = null;
@@ -791,7 +791,7 @@ function render() {
       app.innerHTML = renderExploreEmpty({ field: '?', direction: '?', age: '?' });
     } else if (!state.ready) {
       app.innerHTML = renderExploreSkeleton();
-      // 等 init 完成再 fetch
+      // Wait for init to finish before fetching
       init().then(() => {
         if (state.currentAbort && state.currentAbort.signal.aborted) return;
         const ac = new AbortController();
@@ -809,10 +809,10 @@ function render() {
             app.innerHTML = `
               <section class="page page--explore">
                 <header class="page__header">
-                  <h1 class="page__title">灵感探索</h1>
-                  <p class="page__subtitle">发现感兴趣的科研问题</p>
+                  <h1 class="page__title">Explore Ideas</h1>
+                  <p class="page__subtitle">Discover research questions that interest you</p>
                 </header>
-                ${emptyState('😕', '生成灵感时出错', esc(err.message || String(err)))}
+                ${emptyState('😕', 'Failed to generate idea', esc(err.message || String(err)))}
                 ${bottomNav('explore')}
               </section>
             `;
@@ -835,10 +835,10 @@ function render() {
           app.innerHTML = `
             <section class="page page--explore">
               <header class="page__header">
-                <h1 class="page__title">灵感探索</h1>
-                <p class="page__subtitle">发现感兴趣的科研问题</p>
+                <h1 class="page__title">Explore Ideas</h1>
+                <p class="page__subtitle">Discover research questions that interest you</p>
               </header>
-              ${emptyState('😕', '生成灵感时出错', esc(err.message || String(err)))}
+              ${emptyState('😕', 'Failed to generate idea', esc(err.message || String(err)))}
               ${bottomNav('explore')}
             </section>
           `;
@@ -858,13 +858,13 @@ function render() {
   }
 }
 
-// ---------- 启动 ----------
+// ---------- Boot ----------
 window.addEventListener('hashchange', render);
 window.addEventListener('DOMContentLoaded', () => {
-  // 启动初始化（异步构造 provider）
+  // Boot init (async provider construction)
   init();
 
-  // 如果用户没有 profile 也没有 hash，引导到 profile 页
+  // If the user has no profile and no hash, send them to the profile page
   if (!state.storage.getProfile() && !(location.hash && location.hash.length > 1)) {
     location.hash = '#/profile';
   } else if (!location.hash || location.hash === '#' || location.hash === '#/') {

@@ -1,56 +1,62 @@
-# IdeaMiner · 科研灵感探索 MVP
+# IdeaMiner · Research Idea Exploration MVP
 
-**复现ideaminer并添加输入功能**
+> Reproduce IdeaMiner with text and voice input added.
 
 > *An open-source playground that turns your research profile into a steady stream of
-> questions worth chasing.* — 把科研画像变成持续可探索的研究问题。
+> questions worth chasing.*
 
-IdeaMiner 是一个面向科研工作者的灵感发现工具：在「**完善科研画像 → 灵感探索 →
-3 维评审 → 互动反馈**」的闭环中，帮你从自己学科的视角持续看到值得研究的问题。
+IdeaMiner is an idea-discovery tool for researchers: in the loop of
+**Refine Profile → Explore Ideas → 3-Dimension Review → Interactive Feedback**,
+it surfaces research questions worth pursuing from the perspective of your own
+discipline.
 
-这是一份**纯前端、无构建步骤**的「丐版」MVP —— 所有代码都跑在浏览器里。
-`MockLLMProvider` 从 `data/mock-ideas.json`（34 条手写 idea，覆盖 7 个学科）随机挑选
-并以 400-800ms 的延迟返回；`LocalStorageProvider` 保存画像、收藏与反馈；所有模块都
-通过 JSDoc 类型契约暴露，未来可以零成本切换成真实后端。
+This is a **pure-frontend, no-build** MVP — every line of code runs in the
+browser. `MockLLMProvider` randomly picks from `data/mock-ideas.json`
+(34 hand-written ideas across 7 fields) with a 400-800ms simulated delay;
+`LocalStorageProvider` persists your profile, favorites, and feedback; every
+module is exposed through a JSDoc-typed contract so a real backend can be
+dropped in with zero refactoring.
 
 ---
 
 ## ✨ Features
 
-- 🔄 **4-step workflow** — 完善科研画像 → 灵感探索 → 3 维评审 → 互动反馈
-- 🎤 **Voice input (中文)** + text input, 自带识别脉冲动画和错误提示
-- 📊 **3-dimension review** — 创新 / 可行 / 重要，每条 idea 都给出 0-10 分
-- 👍 **Like / 👎 dislike / 🚫 unrelated** 反馈按钮，下一条 idea 自动适配偏好
+- 🔄 **4-step workflow** — Refine Profile → Explore Ideas → 3D Review → Feedback
+- 🎤 **Voice input (zh-CN)** + text input, with pulse animation and error toasts
+- 📊 **3-dimension review** — Innovation / Feasibility / Importance, scored 0-100 per idea
+- 👍 **Like / 👎 Dislike / 🚫 Unrelated** feedback buttons, next idea adapts to your preferences
 - ⭐ **Save to favorites**, view profile & feedback stats
 - 🧩 **Pluggable LLM provider** — Mock today, OpenAI-compatible tomorrow
-  （`js/openai-llm-provider.js`，Settings 页面一键切换）
-- 🚀 **One-click deploy** — GitHub Pages workflow 开箱即用
+  (`js/openai-llm-provider.js`, one-click switch in the ⚙️ Settings page)
+- 🚀 **One-click deploy** — GitHub Pages workflow out of the box
 
 ---
 
 ## 🎬 Live Demo
 
-> https://&lt;your-org&gt;.github.io/ideaminer-mvp/
+> **https://darrenwongkawa.github.io/ideaminer-mvp/**
 
-Will go live once GitHub Pages is enabled — see [Deployment](#-deployment) below.
+The app is automatically redeployed on every push to `main` via
+`.github/workflows/deploy.yml`.
 
 ---
 
 ## 🚀 Quick Start
 
-无任何依赖。打开一个本地静态服务器即可：
+No dependencies. Spin up a local static server:
 
 ```bash
-git clone https://github.com/<your-org>/ideaminer-mvp.git
+git clone https://github.com/DarrenWongKaWa/ideaminer-mvp.git
 cd ideaminer-mvp
 python3 -m http.server 8080
-# 浏览器打开 http://localhost:8080
+# then open http://localhost:8080 in your browser
 ```
 
-> 直接双击 `index.html` 也能渲染，但**语音输入**、**fetch mock JSON**
-> 在某些浏览器下需要 http(s) 协议。
+> You can also open `index.html` directly, but **voice input** and
+> **fetch mock JSON** require http(s) in some browsers.
 
-首次进入会跳到「完善科研画像」；填好 3 个字段后点「继续」即进入灵感探索页。
+On first visit you are sent to the profile form; fill in the 3 fields and click
+**Continue** to enter the explore page.
 
 ---
 
@@ -70,39 +76,41 @@ python3 -m http.server 8080
 └────────────────────────────────────────────────┘
 ```
 
-模块对应文件：
+Module-to-file mapping:
 
-| 文件 | 角色 | 可替换为 |
+| File | Role | Replace with |
 | --- | --- | --- |
-| `js/llm-provider.js` | `LLMProvider` 接口 + `MockLLMProvider` + `createProvider()` 工厂 | 真实 OpenAI / Claude / 国产大模型 |
-| `js/openai-llm-provider.js` | `OpenAILLMProvider`，OpenAI 兼容接口实现 | 其他兼容服务（DeepSeek / Qwen / Moonshot） |
-| `js/storage.js` | `Storage` 接口 + `LocalStorageProvider`（带 in-memory mirror） | IndexedDB / Supabase / 自建 API |
-| `js/reviewer.js` | `Reviewer` 接口 + `MockReviewer`（FNV-1a hash） | LLM-as-judge / 规则评分 |
-| `js/idea-generator.js` | 串联 LLM + Reviewer + Storage 偏好的调度器 | 增加 ranking / A/B 逻辑 |
-| `js/voice.js` | Web Speech API 包装（zh-CN，feature-detected） | 第三方语音 SDK（讯飞 / 阿里云） |
-| `js/app.js` | Hash 路由 + 页面渲染 | 任意前端框架（React / Vue） |
+| `js/llm-provider.js` | `LLMProvider` interface + `MockLLMProvider` + `createProvider()` factory | Real OpenAI / Claude / domestic LLMs |
+| `js/openai-llm-provider.js` | `OpenAILLMProvider` — OpenAI-compatible implementation | Any other compatible service (DeepSeek / Qwen / Moonshot) |
+| `js/storage.js` | `Storage` interface + `LocalStorageProvider` (with in-memory mirror) | IndexedDB / Supabase / your own API |
+| `js/reviewer.js` | `Reviewer` interface + `MockReviewer` (FNV-1a hash) | LLM-as-judge / rule-based scoring |
+| `js/idea-generator.js` | Orchestrator: chains LLM + Reviewer + Storage preferences | Add ranking / A/B logic |
+| `js/voice.js` | Web Speech API wrapper (zh-CN, feature-detected) | Third-party voice SDK (iFlytek / Aliyun) |
+| `js/app.js` | Hash router + page rendering | Any frontend framework (React / Vue) |
 
-`AbortController` 在路由切换时被传播到 `LLMProvider.generateIdea`，避免泄漏。
+`AbortController` is propagated from the router into `LLMProvider.generateIdea`
+on route changes, preventing in-flight request leaks.
 
 ---
 
 ## 🧪 How to use a real LLM
 
-最简单的方式：在 **⚙️ 设置** 页面把 provider 切换到 `OpenAI`，填入 API key，保存后
-立即生效 —— 无需改代码、无需重启。
+The simplest way: open the **⚙️ Settings** page, switch the provider to
+`OpenAI`, paste your API key, and save — no code changes, no restart.
 
-如果想直接修改源码，`js/app.js` 顶部：
+If you prefer editing source, the top of `js/app.js`:
 
 ```js
 import { MockLLMProvider } from './llm-provider.js';
-//  ↓ 改成 ↓
+//  ↓ change to ↓
 import { OpenAILLMProvider } from './openai-llm-provider.js';
 ```
 
-新类只要实现同样的接口（参见 `js/llm-provider.js` 顶部的 JSDoc）：
+The new class just has to implement the same interface (see the JSDoc at the
+top of `js/llm-provider.js`):
 
 ```js
-// js/openai-llm-provider.js（节选）
+// js/openai-llm-provider.js (excerpt)
 export class OpenAILLMProvider extends LLMProvider {
   constructor(apiKey) {
     super();
@@ -120,78 +128,88 @@ export class OpenAILLMProvider extends LLMProvider {
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: [
-          { role: 'system', content: '你是一个科研选题助手。' },
+          { role: 'system', content: 'You are a research idea assistant.' },
           { role: 'user', content: JSON.stringify(profile) },
         ],
         response_format: { type: 'json_object' },
       }),
     });
     const j = await res.json();
-    return j;  // 字段必须和 IdeaDraft 一致
+    return j;  // returned fields must match the IdeaDraft shape
   }
 }
 ```
 
-`Storage` 和 `Reviewer` 的替换方式完全相同 —— 只要保持接口签名，调度器
-`IdeaGenerator` 内部一行都不需要改。
+`Storage` and `Reviewer` are swapped the same way — keep the interface
+signatures and the `IdeaGenerator` orchestrator needs no internal changes.
 
 ---
 
 ## 🛣️ Roadmap
 
-按价值 / 实现成本排序：
+Ordered by value / implementation cost:
 
-1. ✅ **真实 LLM Provider** — OpenAI-compatible，v0.2.0 已交付
-   （`js/openai-llm-provider.js`，可在 ⚙️ 设置切换）
-2. **后端 API Storage** — Supabase / PocketBase / 自建 Go/Python；接口签名不变
-3. **基于反馈历史的学习** — `IdeaGenerator._preferredField()` 现在是空 stub；下一步把
-   feedback history join 到 idea 元数据，做轻量协同过滤
-4. **检索式 idea 召回** — 不再固定 34 条 mock，而是从 arXiv / OpenAlex 拉候选，让 LLM
-   在候选中重组、引用
-5. **科研社区版** — 多人共享反馈（去重 + 隐私保护），按"专业读者平均打分"给 idea 排序
-6. **多模态输入** — 截图论文 / 公式照片 / 录音 → 走多模态 LLM 抽取研究方向，再进入选题循环
+1. ✅ **Real LLM provider** — OpenAI-compatible, shipped in v0.2.0
+   (`js/openai-llm-provider.js`, switchable from ⚙️ Settings)
+2. **Backend API storage** — Supabase / PocketBase / your own Go/Python service;
+   interface signatures stay the same
+3. **Feedback-aware learning** — `IdeaGenerator._preferredField()` is currently a
+   stub; next step is to join feedback history with idea metadata for
+   lightweight collaborative filtering
+4. **Retrieval-augmented idea recall** — instead of being limited to 34 mock
+   ideas, pull candidates from arXiv / OpenAlex and have the LLM remix them
+   with citations
+5. **Research community version** — share feedback across users (with dedup and
+   privacy), rank ideas by the average expert-reader score
+6. **Multimodal input** — screenshot a paper / photo of an equation / voice
+   recording → run a multimodal LLM to extract the research direction, then
+   enter the idea loop
 
 ---
 
 ## 🚢 Deployment
 
-**GitHub Pages（推荐）**：
+**GitHub Pages (recommended)**:
 
-1. Push 仓库到 GitHub。
-2. 进入仓库 Settings → Pages → Source 选择 **GitHub Actions**。
-3. 之后每次推送到 `main` 分支都会触发 `.github/workflows/deploy.yml`，自动构建并部署。
-4. 部署完成的 URL 会在 Actions 运行的 summary 里显示，格式：
+1. Push the repo to GitHub.
+2. Open repo Settings → Pages → Source: **GitHub Actions**.
+3. Every push to `main` triggers `.github/workflows/deploy.yml` and
+   auto-deploys. The URL appears in the Actions run summary, e.g.
    `https://<org>.github.io/ideaminer-mvp/`
 
-`.nojekyll` 文件告诉 GitHub Pages 跳过 Jekyll 处理（我们的仓库里可能有
-`_` 开头的元数据目录，不想被 Jekyll 当成特殊目录处理）。
+The `.nojekyll` file tells GitHub Pages to skip Jekyll processing
+(repositories may contain `_`-prefixed metadata directories that Jekyll would
+otherwise treat as special).
 
-**其它静态托管**：
+**Other static hosts**:
 
-仓库是纯静态资源，可直接部署到任何静态服务器：
+The repo is pure static, deployable to any static server:
 
-- **Vercel / Netlify / Cloudflare Pages**：连接 GitHub 仓库，build command 留空，
-  output directory 设为 `.`，自动部署。
-- **自己的 Nginx**：`rsync -av --delete ./ user@host:/var/www/ideaminer/`。
+- **Vercel / Netlify / Cloudflare Pages**: connect the GitHub repo, leave the
+  build command empty, set the output directory to `.`, auto-deploy.
+- **Your own Nginx**: `rsync -av --delete ./ user@host:/var/www/ideaminer/`.
 
 ---
 
 ## 📝 Changelog
 
-详见 [CHANGELOG.md](./CHANGELOG.md)。当前版本：**v0.2.0**（Polish release）。
+See [CHANGELOG.md](./CHANGELOG.md). Current version: **v0.2.0** (English + Polish release).
 
 ---
 
 ## ⚠️ Known Limitations
 
-- 真实部署到生产时，`localStorage` 应替换成后端 KV / 用户账户，避免数据被浏览器清空
-  时丢失。
-- Web Speech API 在 Firefox 上**不支持**；检测到不支持时会自动隐藏 🎤 按钮。
-- `MockLLMProvider` 用「同领域优先 + 随机」选 idea，长时间使用会感觉重复；切到真实
-  LLM 后自然消失。
-- 没有完整的无障碍（a11y）审计；M4 Air 浏览器测试覆盖 Chrome / Safari，Edge /
-  Firefox 仅做了理论兼容性检查。
-- 所有文案（提示、toast、占位符）都是中文，国际化是后续任务。
+- For real production deployment, `localStorage` should be replaced with
+  backend KV / user accounts, so data is not lost when the user clears site
+  data.
+- Web Speech API is **not supported** in Firefox; the 🎤 button is auto-hidden
+  when the API is missing.
+- `MockLLMProvider` uses "same-field preference + random" to pick ideas, so
+  long sessions can feel repetitive. Switching to a real LLM removes this.
+- No full accessibility (a11y) audit; tested on Chrome / Safari on M4 Air;
+  Edge / Firefox only verified for theoretical compatibility.
+- Voice input language is `zh-CN`. Other languages require changing the
+  `recognition.lang` value in `js/voice.js`.
 
 ---
 

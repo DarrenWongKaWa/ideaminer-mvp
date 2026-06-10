@@ -1,43 +1,43 @@
 /* ==================================================================
  * IdeaMiner MVP — single stylesheet, mobile-first
  *
- * 设计基调：
- *   - 干净的白底 + 深色文字 + 卡片式布局
- *   - max-width: 480px 居中（移动端优先）
- *   - 底部固定 nav（4 个 icon：探索 / 收藏 / 我的 / 设置）
- *   - 反馈按钮用 pill 形圆角
+ * Design tone:
+ *   - Clean white background + dark text + card-based layout
+ *   - max-width: 480px, centered (mobile-first)
+ *   - Fixed bottom nav (4 icons: Explore / Saved / Profile / Settings)
+ *   - Feedback buttons use pill-shaped rounding
  *
- * 间距系统：4 / 8 / 16 / 24 / 32 px（见 --sp-1..--sp-5）
- * 动效曲线：200ms cubic-bezier(0.4, 0, 0.2, 1)
- * 深色模式：所有颜色都封装在 :root 变量里，后续启用 @media (prefers-color-scheme: dark)
- *          只需重定义一组 token 即可。
+ * Spacing system: 4 / 8 / 16 / 24 / 32 px (see --sp-1..--sp-5)
+ * Motion curve: 200ms cubic-bezier(0.4, 0, 0.2, 1)
+ * Dark mode: all colors are wrapped in :root variables; enabling @media (prefers-color-scheme: dark)
+ *          later will only require redefining a set of tokens.
  * ================================================================== */
 
 /* ------------------------------------------------------------------
- * 1) Design tokens（颜色 / 间距 / 圆角 / 阴影 / 动效）
+ * 1) Design tokens (colors / spacing / radius / shadow / motion)
  * ------------------------------------------------------------------ */
 :root {
-  /* —— 品牌色 —— */
+  /* -- Brand color -- */
   --brand: #5b8def;
   --brand-soft: #e9f0ff;
   --brand-strong: #3a72dc;
 
-  /* —— 表面 / 背景 —— */
+  /* -- Surface / background -- */
   --bg: #ffffff;
   --bg-subtle: #f7f7f8;
   --bg-elevated: #ffffff;
 
-  /* —— 文字 —— */
+  /* -- Text -- */
   --fg: #1a1a1a;
   --fg-muted: #6e6e73;
   --fg-faint: #9a9a9f;
   --fg-on-brand: #ffffff;
 
-  /* —— 边框 / 分割线 —— */
+  /* -- Border / divider -- */
   --border: #e5e5ea;
   --border-strong: #d6d6db;
 
-  /* —— 语义色 —— */
+  /* -- Semantic colors -- */
   --danger: #ff3b30;
   --danger-soft: #ffe1de;
   --warning: #b8851a;
@@ -45,40 +45,40 @@
   --success: #1aa260;
   --success-soft: #e7f7ee;
 
-  /* —— 按钮 —— */
+  /* -- Buttons -- */
   --primary: #1a1a1a;
   --primary-fg: #ffffff;
 
-  /* —— 阴影 —— */
+  /* -- Shadow -- */
   --shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
   --shadow-hover: 0 10px 28px rgba(0, 0, 0, 0.10);
 
-  /* —— 圆角 —— */
+  /* -- Radius -- */
   --radius: 12px;
   --radius-sm: 8px;
   --radius-pill: 999px;
 
-  /* —— 间距 —— */
+  /* -- Spacing -- */
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 16px;
   --sp-4: 24px;
   --sp-5: 32px;
 
-  /* —— gap 兼容老变量名 —— */
+  /* -- gap (legacy alias) -- */
   --gap: var(--sp-3);
   --gap-lg: var(--sp-4);
 
-  /* —— 底部 nav 高度（包含 iPhone safe area） —— */
+  /* -- Bottom nav height (incl. iPhone safe area) -- */
   --nav-h: 64px;
 
-  /* —— 动效 —— */
+  /* -- Motion -- */
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --dur-fast: 150ms;
   --dur: 200ms;
   --dur-slow: 320ms;
 
-  /* —— 焦点环 —— */
+  /* -- Focus ring -- */
   --focus-ring: 0 0 0 3px rgba(91, 141, 239, 0.32);
 }
 
@@ -123,7 +123,7 @@ input, select, button {
   font-family: inherit;
 }
 
-/* 全局焦点环（键盘可达） */
+/* Global focus ring (keyboard-accessible) */
 :focus {
   outline: none;
 }
@@ -134,7 +134,7 @@ input, select, button {
 }
 
 /* ------------------------------------------------------------------
- * 3) 应用容器（移动端居中）
+ * 3) App container (centered on mobile)
  * ------------------------------------------------------------------ */
 #app {
   min-height: 100vh;
@@ -176,7 +176,7 @@ input, select, button {
 }
 
 /* ------------------------------------------------------------------
- * 4) 表单
+ * 4) Form
  * ------------------------------------------------------------------ */
 .form {
   display: flex;
@@ -200,7 +200,7 @@ input, select, button {
   display: inline-block;
 }
 
-/* 焦点时 label 上浮 + 变 brand 色（float-emphasize） */
+/* On focus, label floats up + turns brand color (float-emphasize) */
 .form__field:focus-within .form__label {
   color: var(--brand);
   transform: translateY(-2px);
@@ -299,7 +299,7 @@ select.form__input {
   }
 }
 
-/* 5-dot 可视化器（仅 CSS 动画，挂在 mic 旁） */
+/* 5-dot visualizer (CSS animation only, sits next to mic) */
 .voice-dots {
   display: inline-flex;
   align-items: center;
@@ -326,7 +326,7 @@ select.form__input {
 }
 
 /* ------------------------------------------------------------------
- * 5) 按钮
+ * 5) Buttons
  * ------------------------------------------------------------------ */
 .btn {
   display: inline-flex;
@@ -402,7 +402,7 @@ select.form__input {
 }
 
 /* ------------------------------------------------------------------
- * 6) 卡片（idea card）
+ * 6) Cards (idea card)
  * ------------------------------------------------------------------ */
 .card {
   background: var(--bg);
@@ -557,7 +557,7 @@ select.form__input {
 }
 
 /* ------------------------------------------------------------------
- * 7) 反馈按钮
+ * 7) Feedback buttons
  * ------------------------------------------------------------------ */
 .feedback {
   display: grid;
@@ -605,7 +605,7 @@ select.form__input {
 }
 
 /* ------------------------------------------------------------------
- * 8) 底部 nav（4 个 item：探索 / 收藏 / 我的 / 设置）
+ * 8) Bottom nav (4 items: Explore / Saved / Profile / Settings)
  * ------------------------------------------------------------------ */
 .bottom-nav {
   position: fixed;
@@ -705,7 +705,7 @@ select.form__input {
 }
 
 /* ------------------------------------------------------------------
- * 10) Empty state（图标 + 标题 + 副文 + CTA）
+ * 10) Empty state (icon + title + sub + CTA)
  * ------------------------------------------------------------------ */
 .empty {
   display: flex;
@@ -779,7 +779,7 @@ select.form__input {
 }
 
 /* ------------------------------------------------------------------
- * 12) Toast（滑入动画 + emoji icon）
+ * 12) Toast (slide-in animation + emoji icon)
  * ------------------------------------------------------------------ */
 .toast {
   position: fixed;
@@ -820,7 +820,7 @@ select.form__input {
 .toast--warn    { background: rgba(184, 133, 26, 0.95); }
 
 /* ------------------------------------------------------------------
- * 13) Settings page（额外分组 / 单选 / 输入）
+ * 13) Settings page (extra groups / radios / inputs)
  * ------------------------------------------------------------------ */
 .settings__section {
   margin-bottom: var(--sp-5);
@@ -914,7 +914,7 @@ select.form__input {
 }
 
 /* ------------------------------------------------------------------
- * 14) Spinner（保留，作为小加载器；大加载用 skeleton）
+ * 14) Spinner (kept as a small loader; large loading uses skeleton)
  * ------------------------------------------------------------------ */
 .spinner {
   width: 24px;
@@ -931,7 +931,7 @@ select.form__input {
 }
 
 /* ------------------------------------------------------------------
- * 15) 桌面端微调：把 app 放进白色卡片式容器
+ * 15) Desktop tweaks: place app inside a white card-style container
  * ------------------------------------------------------------------ */
 @media (min-width: 600px) {
   body {
@@ -945,7 +945,7 @@ select.form__input {
     min-height: 100vh;
   }
   .bottom-nav {
-    /* 在桌面端 fixed 到 #app 容器底部 */
+    /* On desktop, fixed to the bottom of the #app container */
     left: 50%;
     transform: translateX(-50%);
     max-width: 480px;
@@ -953,7 +953,7 @@ select.form__input {
 }
 
 /* ------------------------------------------------------------------
- * 16) 减少动效（系统偏好）
+ * 16) Reduced motion (system preference)
  * ------------------------------------------------------------------ */
 @media (prefers-reduced-motion: reduce) {
   *,

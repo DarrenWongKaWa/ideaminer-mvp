@@ -1,15 +1,15 @@
 /**
  * idea-generator.js
  * ------------------------------------------------------------
- * 把 LLMProvider + Reviewer + Storage 串起来：
- *   1. 看 storage.getFeedbackHistory() 推断偏好领域
- *   2. 调 llmProvider.generateIdea(profile, signal)
- *   3. 调 reviewer.review(draft)
- *   4. 合并为 ReviewedIdea，注入稳定的 id 和 generatedAt
+ * Wires LLMProvider + Reviewer + Storage together:
+ *   1. Inspect storage.getFeedbackHistory() to infer the preferred field
+ *   2. Call llmProvider.generateIdea(profile, signal)
+ *   3. Call reviewer.review(draft)
+ *   4. Merge into a ReviewedIdea with a stable id and generatedAt
  *
- * 抽象点：
- *  - 调度逻辑与具体 LLM / Reviewer / Storage 解耦，扩展时
- *    只需在 app.js 里换实现，IdeaGenerator 内部不需要改。
+ * Extension points:
+ *  - Scheduling logic is decoupled from concrete LLM / Reviewer / Storage; to extend
+ *    you only swap the implementation in app.js, IdeaGenerator internals stay the same.
  * ------------------------------------------------------------
  */
 
@@ -35,36 +35,36 @@ export class IdeaGenerator {
   }
 
   /**
-   * 推断用户最喜爱的领域（基于 feedback history）。
-   * 丐版策略：找到所有 type='like' 的 ideaId，然后在历史里
-   * 找 'idea-' 前缀 ID 关联的 field（mock 数据用 idea-XXX 编号）。
-   * 真实现成可以从数据库 join。
+   * Infer the user's most-liked field (based on feedback history).
+   * MVP strategy: find all ideaIds with type='like', then look up their field
+   * in history (mock data uses idea-XXX numbering).
+   * A real implementation would join against the database.
    * @returns {string|null}
    */
   _preferredField() {
     const history = this.storage.getFeedbackHistory();
     const likes = history.filter((f) => f.type === 'like');
     if (likes.length === 0) return null;
-    // 丐版 heuristic：取最近一个 like 的 ideaId，从 -1、-2、-3 ... 中
-    // 提取领域（mock 数据已知编号在 idea-001..idea-012，对应 6 个领域）
-    // 真实场景这里应该 join 数据库
-    return null; // 让 MockLLMProvider 自己做均匀随机就够了
+    // MVP heuristic: take the most recent like's ideaId and extract the field
+    // (mock data numbering idea-001..idea-012 maps to 6 fields)
+    // A real scenario should join against a database here
+    return null; // let MockLLMProvider do uniform random on its own
   }
 
   /**
-   * 生成下一条 idea 草稿并完成评审。
+   * Generate the next idea draft and complete the review.
    * @param {ResearchProfile} profile
    * @param {AbortSignal} [signal]
    * @returns {Promise<import('./storage.js').ReviewedIdea>}
    */
   async next(profile, signal) {
-    // 1. LLM 生成
+    // 1. LLM generation
     const draft = await this.llm.generateIdea(profile, signal);
 
-    // 2. 评审
+    // 2. Review
     const review = await this.reviewer.review(draft);
 
-    // 3. 合并
+    // 3. Merge
     const id = 'rv-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     return {
       id,

@@ -1,20 +1,20 @@
 /**
  * voice.js
  * ------------------------------------------------------------
- * Web Speech API 语音输入助手。
+ * Web Speech API voice input helper.
  *
- * 浏览器支持：
+ * Browser support:
  *  - Chrome / Edge：window.webkitSpeechRecognition
  *  - Safari 14.1+：window.SpeechRecognition
- *  - Firefox：不支持（isSupported() 返回 false）
+ *  - Firefox: not supported (isSupported() returns false)
  *
- * 用法：
+ * Usage:
  *   const v = new VoiceInput();
  *   if (v.isSupported()) {
  *     v.start(
  *       (text, isFinal) => {
- *         // isFinal=false 是 interim 结果（实时填充）
- *         // isFinal=true  表示这句结束，UI 可以做收尾
+ *         // isFinal=false is the interim result (live fill)
+ *         // isFinal=true means the utterance is final; UI can wrap up
  *         input.value = text;
  *       },
  *       (err) => {
@@ -24,10 +24,10 @@
  *     );
  *   }
  *
- * UI 配合（CSS 已有，HTML 由 app.js 渲染）：
- *   - mic 按钮加 .is-recording → 红色脉冲背景
- *   - .voice-dots 显示/隐藏 5 个动画小点
- *   - toast() 显示错误（已在 app.js 中处理）
+ * UI integration (CSS is in place, HTML is rendered by app.js):
+ *   - mic button adds .is-recording -> red pulse background
+ *   - .voice-dots shows/hides 5 animated dots
+ *   - toast() shows errors (handled in app.js)
  * ------------------------------------------------------------
  */
 
@@ -49,7 +49,7 @@ export class VoiceInput {
    * @param {(error: string) => void} onError
    */
   start(onResult, onError) {
-    // 若已在录音，先平稳结束旧的
+    // If already recording, gracefully end the previous one first
     if (this._isRecording) {
       this._hardStop();
     }
@@ -80,7 +80,7 @@ export class VoiceInput {
 
     rec.onerror = (e) => {
       const code = (e && e.error) || 'unknown';
-      // 'aborted' 是用户主动取消，不算错误
+      // 'aborted' is a user-initiated cancel, not an error
       if (code !== 'aborted') {
         if (this._onError) this._onError(code);
       }
@@ -88,8 +88,8 @@ export class VoiceInput {
     };
 
     rec.onend = () => {
-      // 正常结束（用户说完、或者超时）：清理本地状态
-      // 注意：onerror 先触发时，_cleanup() 已经把 _isRecording 置 false
+      // Normal end (utterance finished, or timeout): clean up local state
+      // Note: when onerror fires first, _cleanup() has already set _isRecording to false
       this._cleanup();
     };
 
@@ -106,8 +106,8 @@ export class VoiceInput {
   }
 
   /**
-   * 用户主动停止（异步：recognition.stop() 之后会触发 onend）。
-   * 状态同步置 false 以便 UI 立即恢复。
+   * User-initiated stop (async: recognition.stop() will fire onend after).
+   * State synchronously set to false so the UI can recover immediately.
    */
   stop() {
     if (this.recognition) {
@@ -117,7 +117,7 @@ export class VoiceInput {
   }
 
   /**
-   * 内部强制停止（用于 start() 内重新发起时，避免与上次 recognition 冲突）。
+   * Internal forced stop (used when start() re-issues, to avoid clashing with the previous recognition).
    */
   _hardStop() {
     if (this.recognition) {
