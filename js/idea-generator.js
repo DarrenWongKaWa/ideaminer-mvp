@@ -114,11 +114,29 @@ export class IdeaGenerator {
     // 1. LLM generation
     const draft = await this.llm.generateIdea(profile, signal);
 
-    // 2. Review
-    const review = await this.reviewer.review(draft);
+    // 2. Look up the original pick (if the provider tracks it). For
+    //    MockLLMProvider, this lets us preserve the user-idea id so
+    //    the UI can render the "✨ Your idea" badge and the user
+    //    can Like/Dislike the original entry instead of a fresh one.
+    const lastPick = (typeof this.llm.getLastPick === 'function')
+      ? this.llm.getLastPick()
+      : null;
 
-    // 3. Merge
-    const id = 'rv-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    // 3. Review — for user ideas, reuse the original review scores
+    //    that were computed at insert time (so the user sees stable
+    //    scores on their own idea). For mock ideas, run the normal
+    //    MockReviewer pipeline.
+    const review = (lastPick && lastPick.isUser && lastPick.review)
+      ? lastPick.review
+      : await this.reviewer.review(draft);
+
+    // 4. Mint an id. Preserve the user-idea id verbatim (so feedback
+    //    and save continue to dedupe correctly), otherwise mint a
+    //    fresh `rv-*` id.
+    const id = (lastPick && lastPick.isUser && lastPick.id)
+      ? lastPick.id
+      : 'rv-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+
     return {
       id,
       question: draft.question,
@@ -127,6 +145,7 @@ export class IdeaGenerator {
       methods: draft.methods,
       review,
       generatedAt: Date.now(),
+      _user: !!(lastPick && lastPick.isUser),
     };
   }
 
@@ -191,16 +210,30 @@ export class IdeaGenerator {
       methods: Array.isArray(pick.methods) ? pick.methods.slice() : [],
     };
 
-    const review = await this.reviewer.review(draft);
+    // User-submitted ideas already carry a stable 3-dim review
+    // (computed by MockReviewer at insert time). Reusing that review
+    // for the search path keeps the score stable and avoids the
+    // 80-200ms re-review on every search hit.
+    const isUserPick = pick && pick._user === true;
+    const review = (isUserPick && pick.review)
+      ? pick.review
+      : await this.reviewer.review(draft);
     if (signal && signal.aborted) {
       throw new DOMException('aborted', 'AbortError');
     }
 
     // Preserve the original idea id when present so feedback / save
-    // continues to dedupe correctly; otherwise mint a fresh id.
-    const id = (pick.id && /^idea-/.test(pick.id))
-      ? 'search-' + pick.id
-      : 'rv-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    // continues to dedupe correctly. Mock ideas are prefixed with
+    // `search-`; user ideas are kept verbatim so the "✨ Your idea"
+    // badge can detect them by id prefix.
+    let id;
+    if (isUserPick && pick.id) {
+      id = pick.id;
+    } else if (pick.id && /^idea-/.test(pick.id)) {
+      id = 'search-' + pick.id;
+    } else {
+      id = 'rv-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    }
 
     return {
       id,
@@ -214,6 +247,7 @@ export class IdeaGenerator {
       _matchedQuery: raw,
       _score: hit.score,
       _sourceIdeaId: pick.id || null,
+      _user: isUserPick,
     };
   }
 }

@@ -28,6 +28,11 @@ dropped in with zero refactoring.
   scoring, see "How search works" below)
 - 📊 **3-dimension review** — Innovation / Feasibility / Importance, scored 0-100 per idea
 - 👍 **Like / 👎 Dislike / 🚫 Unrelated** feedback buttons, next idea adapts to your preferences
+- ✏️ **Add your own idea** — type or dictate your own research question
+  (field, question, background, why-it-matters, methods), get a 3-dim
+  review, and add it to the local pool. Your ideas participate in the
+  random explore and search flows, get a "✨ Your idea" badge on the
+  card, and show up in the "My Ideas" list on the Profile page.
 - ⭐ **Save to favorites**, view profile & feedback stats
 - 🧩 **Pluggable LLM provider** — Mock today, OpenAI-compatible tomorrow
   (`js/openai-llm-provider.js`, one-click switch in the ⚙️ Settings page)
@@ -134,6 +139,61 @@ the LLM prompt.
 
 ---
 
+## ✏️ Adding your own ideas
+
+You are not limited to the 34 hand-written ideas. The new `#/new`
+page lets you submit your own research questions and feed them into
+the same pool the explore / search flows draw from.
+
+1. From the **Explore Ideas** page, tap **+ Add your own idea**
+   (just below the search row) or open `#/new` directly.
+2. Pick a **Field** (pre-filled from your profile), type or dictate
+   a **Question** (the only required field), and optionally fill
+   **Background**, **Why it matters**, and **Methods** (one step per
+   line). Each textarea has a 🎤 button — same `zh-CN` voice
+   recognizer the rest of the app uses.
+3. Tap **Save idea →**. The idea is run through `MockReviewer` for
+   3-dim Innovation / Feasibility / Importance scores, persisted to
+   `localStorage` under `ideaminer.user-ideas.v1`, and the page
+   navigates you back to `#/explore` so you immediately see your
+   idea in the random flow with a "✨ Your idea" badge.
+4. From the **Profile** page (`#/my`), the **My Ideas** section
+   lists everything you have added, with a **Delete** button per
+   entry (with confirm dialog) and a **+ Add new** button at the
+   top-right.
+
+What is shared with the existing flow:
+
+- ✅ Your idea can be **Liked / Disliked / Unrelated** (feedback is
+  recorded under the same `feedback` key, so the 👍-based preferred-
+  field logic in `IdeaGenerator._preferredField` still works).
+- ✅ Your idea can be **Saved** to favorites and shows up in
+  `#/saved` like any other entry.
+- ✅ Your idea participates in **search** — the keyword scorer in
+  `js/idea-search.js` runs over the merged pool, so a query that
+  hits your own background / methods / field works.
+- ✅ Your idea is included in the **random** flow; the merged pool
+  puts user ideas first, so freshly added ideas surface early.
+
+What is **not** shared (yet):
+
+- ❌ The real LLM provider (`OpenAILLMProvider`) does not yet merge
+  user ideas into the search / random pool; that's a v0.6 follow-up.
+  In mock mode (the default), everything works.
+- ❌ No export / import — user ideas live in your browser's
+  `localStorage` only. Clearing site data loses them.
+
+The plumbing is in `js/storage.js` (`addUserIdea` / `getUserIdeas` /
+`deleteUserIdea` / `getMergedIdeas`) and `js/llm-provider.js`
+(`MockLLMProvider.setUserIdeas` / `getUserIdeas`). The
+`IdeaGenerator.next` and `nextWithQuery` paths are unchanged on
+the surface — they keep their signatures — but the `MockLLMProvider`
+now picks from a merged pool and `getLastPick()` lets the generator
+preserve the user-idea id (and `_user: true` flag) so the badge,
+the feedback dedupe, and the "My Ideas" list all stay consistent.
+
+---
+
 ## 🧪 How to use a real LLM
 
 The simplest way: open the **⚙️ Settings** page, switch the provider to
@@ -234,7 +294,7 @@ The repo is pure static, deployable to any static server:
 
 ## 📝 Changelog
 
-See [CHANGELOG.md](./CHANGELOG.md). Current version: **v0.2.0** (English + Polish release).
+See [CHANGELOG.md](./CHANGELOG.md). Current version: **v0.5.0** (Add your own idea).
 
 ---
 

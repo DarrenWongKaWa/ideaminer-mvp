@@ -7,7 +7,8 @@
  *   #/profile   Refine Your Research Profile（form）
  *   #/explore   Explore Ideas (idea card + feedback buttons)
  *   #/saved     Saved (list of saved ideas)
- *   #/my        Profile (profile + feedback history)
+ *   #/new       Add Your Own Idea (form, voice, localStorage)
+ *   #/my        Profile (profile + feedback history + My Ideas)
  *   #/settings  Settings (LLM provider selection / API config / test)
  *
  * Extension points:
@@ -20,6 +21,7 @@
 import { createProvider } from './llm-provider.js';
 import { LocalStorageProvider } from './storage.js';
 import { IdeaGenerator } from './idea-generator.js';
+import { MockReviewer } from './reviewer.js';
 import { VoiceInput } from './voice.js';
 
 // ---------- LLM provider config (persisted) ----------
@@ -324,6 +326,18 @@ function renderExploreSkeleton() {
   `;
 }
 
+// ---------- Render: small "+ Add your own idea" link ----------
+// Used both below the search row on the explore page and in the
+// "no match" empty state.
+function renderExploreAddButton() {
+  return `
+    <a class="explore__add-button" href="#/new" aria-label="Add your own idea">
+      <span aria-hidden="true">+</span>
+      <span>Add your own idea</span>
+    </a>
+  `;
+}
+
 // ---------- Render: search row (text + voice + submit + clear) ----------
 function renderSearchRow(currentQuery) {
   const q = currentQuery || '';
@@ -367,6 +381,13 @@ function renderExploreIdea(idea) {
   const matchBadge = matchedQuery
     ? `<div class="search__match-badge" role="status">🔍 Matched: <em>${esc(matchedQuery)}</em></div>`
     : '';
+  // "✨ Your idea" badge — rendered when the displayed card is a
+  // user-submitted entry. We check both the explicit `_user` flag
+  // and the id prefix for safety (older entries may lack the flag).
+  const isUser = !!(idea && (idea._user || (idea.id && /^user-/.test(idea.id))));
+  const userBadge = isUser
+    ? `<span class="badge badge--yours" title="Submitted by you">✨ Your idea</span>`
+    : '';
 
   return `
     <section class="page page--explore">
@@ -377,12 +398,15 @@ function renderExploreIdea(idea) {
 
       ${renderSearchRow(matchedQuery || '')}
 
+      ${renderExploreAddButton()}
+
       ${matchBadge}
 
       <article class="card" data-idea-id="${esc(idea.id)}">
         <h2 class="card__question">${esc(idea.question)}</h2>
 
         <div class="card__badges" aria-label="Review scores">
+          ${userBadge}
           <span class="badge badge--innovation" title="Innovation">Innovation ${review.innovation}</span>
           <span class="badge badge--feasibility" title="Feasibility">Feasibility ${review.feasibility}</span>
           <span class="badge badge--importance" title="Importance">Importance ${review.importance}</span>
@@ -442,11 +466,15 @@ function renderExploreNoMatch(query) {
         <p class="page__subtitle">Discover research questions that interest you</p>
       </header>
       ${renderSearchRow(query || '')}
+      ${renderExploreAddButton()}
       ${emptyState(
         '🔍',
         `No idea matched “${esc(query || '')}”`,
-        `Try a different term, or let us pick a random one for you.`,
-        `<button class="btn btn--primary" id="surprise-me" type="button">Surprise me</button>`
+        `Try a different term, or let us pick a random one for you. You can also add your own idea to the pool.`,
+        `<div class="empty__cta-row">
+          <button class="btn btn--primary" id="surprise-me" type="button">Surprise me</button>
+          <a class="btn btn--ghost" href="#/new">+ Add your own idea</a>
+        </div>`
       )}
       ${bottomNav('explore')}
     </section>
@@ -825,9 +853,287 @@ function renderMy() {
         <p class="empty__body">${state.storage.getSavedIdeas().length} total · <a class="link" href="#/saved">View</a></p>
       </section>
 
+      ${renderMyIdeasSection()}
+
       ${bottomNav('my')}
     </section>
   `;
+}
+
+// ---------- Render: Add Your Own Idea (#/new) ----------
+// Voice input helper for the new-idea form. Each textarea has its
+// own 🎤 button; tapping it starts a single-shot voice recognition
+// in zh-CN, and the live transcript (final or interim) replaces the
+// textarea value. Errors surface as toasts.
+function _buildNewIdeaVoiceButton(targetName, dots, form) {
+  return `
+    <button type="button" class="form__mic form-page__mic" data-voice-target="${esc(targetName)}" aria-label="Voice input for ${esc(targetName)}">
+      <span aria-hidden="true">🎤</span>
+    </button>
+    <span class="voice-dots" data-voice-dots="${esc(targetName)}" hidden aria-hidden="true">
+      <span class="voice-dots__dot"></span>
+      <span class="voice-dots__dot"></span>
+      <span class="voice-dots__dot"></span>
+      <span class="voice-dots__dot"></span>
+      <span class="voice-dots__dot"></span>
+    </span>
+  `;
+}
+
+function renderNewIdeaForm() {
+  const profile = state.storage.getProfile();
+  const fieldOptions = [
+    'Physics', 'Chemistry', 'Biology', 'Computer Science', 'Mathematics',
+    'Materials Science', 'Earth Science', 'Psychology', 'Economics', 'Other',
+  ];
+  // Pre-fill the field from the user's profile; default to "Other"
+  // when no profile is set yet.
+  const prefilledField = (profile && profile.field) || '';
+  const opts = (arr, sel) => arr.map((x) =>
+    `<option value="${esc(x)}" ${x === sel ? 'selected' : ''}>${esc(x)}</option>`
+  ).join('');
+
+  const voiceSupported = state.voice.isSupported();
+
+  return `
+    <section class="page page--new">
+      <header class="page__header">
+        <h1 class="page__title">Add Your Own Idea</h1>
+        <p class="page__subtitle">Add to the local pool — searchable, randomizable, and reviewed just like mock ideas.</p>
+      </header>
+
+      <form id="new-idea-form" class="form form-page" novalidate>
+        <label class="form__field form-page__field">
+          <span class="form__label form-page__field-label">Field</span>
+          <select class="form__input" name="field" required>
+            <option value="" disabled ${prefilledField ? '' : 'selected'}>Select a field</option>
+            ${opts(fieldOptions, prefilledField)}
+          </select>
+        </label>
+
+        <div class="form__field form-page__field">
+          <span class="form__label form-page__field-label form-page__field-label--required">Question</span>
+          <div class="form-page__voice-row">
+            <textarea
+              class="form__input form-page__textarea"
+              name="question"
+              rows="2"
+              placeholder="e.g. Can we use topological edge states to encode fault-tolerant qubits?"
+              required
+            ></textarea>
+            ${voiceSupported ? _buildNewIdeaVoiceButton('question', null, null) : ''}
+          </div>
+        </div>
+
+        <div class="form__field form-page__field">
+          <span class="form__label form-page__field-label">Background</span>
+          <div class="form-page__voice-row">
+            <textarea
+              class="form__input form-page__textarea"
+              name="background"
+              rows="3"
+              placeholder="Current state of the field, the knowledge gap your idea addresses…"
+            ></textarea>
+            ${voiceSupported ? _buildNewIdeaVoiceButton('background', null, null) : ''}
+          </div>
+        </div>
+
+        <div class="form__field form-page__field">
+          <span class="form__label form-page__field-label">Why it matters</span>
+          <div class="form-page__voice-row">
+            <textarea
+              class="form__input form-page__textarea"
+              name="significance"
+              rows="3"
+              placeholder="What becomes possible if this question is answered?"
+            ></textarea>
+            ${voiceSupported ? _buildNewIdeaVoiceButton('significance', null, null) : ''}
+          </div>
+        </div>
+
+        <div class="form__field form-page__field">
+          <span class="form__label form-page__field-label">Methods <span class="form-page__field-hint">(one per line)</span></span>
+          <div class="form-page__voice-row">
+            <textarea
+              class="form__input form-page__textarea"
+              name="methods"
+              rows="4"
+              placeholder="Step 1: ...&#10;Step 2: ...&#10;Step 3: ..."
+            ></textarea>
+            ${voiceSupported ? _buildNewIdeaVoiceButton('methods', null, null) : ''}
+          </div>
+        </div>
+
+        <div class="form-page__actions">
+          <a class="btn btn--ghost" href="#/explore">Cancel</a>
+          <button type="submit" id="new-idea-save" class="btn btn--primary" disabled>Save idea →</button>
+        </div>
+      </form>
+    </section>
+  `;
+}
+
+function bindNewIdeaEvents() {
+  const form = document.getElementById('new-idea-form');
+  if (!form) return;
+
+  const saveBtn = form.querySelector('#new-idea-save');
+  const questionEl = form.querySelector('[name="question"]');
+
+  // Enable the Save button only when Question is non-empty after trim.
+  const refreshSaveEnabled = () => {
+    if (!saveBtn || !questionEl) return;
+    const ok = String(questionEl.value || '').trim().length > 0;
+    saveBtn.disabled = !ok;
+  };
+  if (questionEl) questionEl.addEventListener('input', refreshSaveEnabled);
+  refreshSaveEnabled();
+
+  // Voice input: one 🎤 button per textarea. Tap to start, tap again
+  // to stop. Reuses VoiceInput (zh-CN) and the same error-toast
+  // pattern as the profile form.
+  form.querySelectorAll('[data-voice-target]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const targetName = btn.getAttribute('data-voice-target');
+      const target = form.querySelector(`[name="${targetName}"]`);
+      if (!target) return;
+      const dots = form.querySelector(`[data-voice-dots="${targetName}"]`);
+
+      if (state.voice.isRecording() && state.voice._currentTarget === 'new-' + targetName) {
+        state.voice.stop();
+        btn.classList.remove('is-recording');
+        if (dots) dots.hidden = true;
+        state.voice._currentTarget = null;
+        return;
+      }
+      state.voice._currentTarget = 'new-' + targetName;
+      btn.classList.add('is-recording');
+      if (dots) dots.hidden = false;
+      state.voice.start(
+        (text, isFinal) => {
+          target.value = text;
+          if (targetName === 'question') refreshSaveEnabled();
+          if (isFinal) {
+            btn.classList.remove('is-recording');
+            if (dots) dots.hidden = true;
+            state.voice._currentTarget = null;
+          }
+        },
+        (err) => {
+          btn.classList.remove('is-recording');
+          if (dots) dots.hidden = true;
+          state.voice._currentTarget = null;
+          if (err === 'not-allowed' || err === 'service-not-allowed') {
+            toast('⚠️ Please allow microphone access (Browser Settings → Site permissions)', 'warn');
+          } else if (err === 'no-speech') {
+            toast("⚠️ Didn't hear anything, please try again", 'warn');
+          } else if (err === 'audio-capture') {
+            toast('⚠️ No microphone device found', 'error');
+          } else if (err !== 'aborted') {
+            toast('⚠️ Voice input failed: ' + err, 'error');
+          }
+        }
+      );
+    });
+  });
+
+  // Save handler: validate, call Storage.addUserIdea, sync into the
+  // provider, then navigate to the explore page so the user
+  // immediately sees their idea in the random flow.
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const draft = {
+      field: String(fd.get('field') || '').trim(),
+      question: String(fd.get('question') || '').trim(),
+      background: String(fd.get('background') || '').trim(),
+      significance: String(fd.get('significance') || '').trim(),
+      methods: String(fd.get('methods') || '')
+        .split('\n')
+        .map((m) => m.trim())
+        .filter(Boolean),
+    };
+    if (!draft.field) { toast('⚠️ Please choose a field', 'warn'); return; }
+    if (!draft.question) { toast('⚠️ Question is required', 'warn'); return; }
+
+    let record;
+    try {
+      // Reuse the existing MockReviewer so the user idea gets
+      // consistent 3-dim scores (same algorithm as the explore flow).
+      const reviewer = state.generator ? state.generator.reviewer : new MockReviewer();
+      record = state.storage.addUserIdea(draft, reviewer);
+    } catch (err) {
+      console.error(err);
+      toast('❌ ' + (err.message || 'Failed to save idea'), 'error');
+      return;
+    }
+
+    // Push the new list into the provider so the next pick (on
+    // #/explore) may include this idea. No generator rebuild needed.
+    syncUserIdeasIntoProvider();
+
+    toast('✅ Saved — your idea is now in the pool', 'success');
+    // Briefly defer navigation so the toast is visible.
+    setTimeout(() => { location.hash = '#/explore'; }, 50);
+  });
+}
+
+// ---------- Render: My Ideas section on #/my ----------
+// Returns the inner section HTML for the user-submitted ideas list.
+// Used inside renderMy() below the existing feedback stats.
+function renderMyIdeasSection() {
+  const list = state.storage.getUserIdeas();
+  const total = list.length;
+
+  const items = list.map((it, i) => {
+    const truncated = String(it.question || '').length > 80
+      ? String(it.question).slice(0, 80) + '…'
+      : String(it.question || '');
+    const fieldTag = it.field ? `<span class="badge badge--field">${esc(it.field)}</span>` : '';
+    return `
+      <li class="my-ideas-item" data-user-idea-id="${esc(it.id)}">
+        <div class="my-ideas-item__index">${i + 1}.</div>
+        <div class="my-ideas-item__body">
+          <div class="my-ideas-item__question">${esc(truncated)}</div>
+          <div class="my-ideas-item__meta">${fieldTag}</div>
+        </div>
+        <button type="button" class="my-ideas-item__delete" data-delete-user="${esc(it.id)}" aria-label="Delete this idea">Delete</button>
+      </li>
+    `;
+  }).join('');
+
+  const body = total === 0
+    ? `<p class="empty__body">You haven't added any ideas yet — click <strong>+ Add new</strong> to start.</p>`
+    : `<ol class="my-ideas-list">${items}</ol>`;
+
+  return `
+    <section class="card card--user-ideas">
+      <div class="card__user-ideas-header">
+        <h2 class="card__section-title">✨ My Ideas <span class="card__section-title-count">${total}</span></h2>
+        <a class="btn btn--ghost" href="#/new">+ Add new</a>
+      </div>
+      ${body}
+    </section>
+  `;
+}
+
+function bindMyIdeasEvents() {
+  document.querySelectorAll('[data-delete-user]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-delete-user');
+      if (!id) return;
+      const ok = window.confirm('Delete this idea from your pool? This cannot be undone.');
+      if (!ok) return;
+      const removed = state.storage.deleteUserIdea(id);
+      if (removed) {
+        syncUserIdeasIntoProvider();
+        toast('✅ Removed', 'success');
+        render();
+      } else {
+        toast('⚠️ Could not find that idea', 'warn');
+      }
+    });
+  });
 }
 
 // ---------- Render: Settings (#/settings) ----------
@@ -987,9 +1293,29 @@ async function rebuildProvider(cfg) {
     const provider = await createProvider(cfg);
     state.llm = provider;
     state.generator = new IdeaGenerator(state.llm, undefined, state.storage);
+    // Push any persisted user ideas into the new provider so the
+    // random flow and search path both see them.
+    syncUserIdeasIntoProvider();
   } catch (err) {
     console.error('rebuildProvider failed:', err);
     toast('❌ ' + (err.message || 'provider initialization failed'), 'error');
+  }
+}
+
+/**
+ * Copy the current user-ideas list from Storage into the active
+ * LLM provider (if it supports the setUserIdeas API). Called on
+ * boot, after a provider swap in Settings, and after a successful
+ * addUserIdea / deleteUserIdea so the pool stays in sync without
+ * a full rebuild.
+ */
+function syncUserIdeasIntoProvider() {
+  if (!state.llm) return;
+  if (typeof state.llm.setUserIdeas !== 'function') return;
+  try {
+    state.llm.setUserIdeas(state.storage.getUserIdeas());
+  } catch (err) {
+    console.warn('syncUserIdeasIntoProvider failed:', err);
   }
 }
 
@@ -1029,8 +1355,12 @@ function render() {
   } else if (route === '/saved') {
     app.innerHTML = renderSaved();
     bindSavedEvents();
+  } else if (route === '/new') {
+    app.innerHTML = renderNewIdeaForm();
+    bindNewIdeaEvents();
   } else if (route === '/my') {
     app.innerHTML = renderMy();
+    bindMyIdeasEvents();
   } else if (route === '/settings') {
     app.innerHTML = renderSettings();
     bindSettingsEvents();

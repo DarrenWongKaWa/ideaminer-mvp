@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-10
+
+### Added
+- **Add your own idea**: a new `#/new` page lets the user fill a form
+  (field, question, background, significance, methods) with text or
+  voice input (the same `VoiceInput` class, `zh-CN`, with the live
+  interim result filling the textarea), then save to localStorage
+  and join the explore / search pool.
+- "✨ Your idea" badge on user-submitted cards in the explore flow.
+  The badge is rendered whenever the displayed `ReviewedIdea` has
+  `_user: true` or its id starts with `user-`.
+- "My Ideas" section on `#/my` (after the feedback stats) with a
+  per-row **Delete** button (with `window.confirm`) and a **+ Add
+  new** button in the section header. Empty state shows a hint
+  pointing to the **+ Add new** button.
+- "+ Add your own idea" pill button below the search row on the
+  Explore Ideas page, plus a second copy inside the "No idea
+  matched" empty-state CTA.
+- `Storage.addUserIdea(draft, reviewer)` — generates a `user-…` id,
+  runs `MockReviewer` (when supplied) for 3-dim scores, persists
+  under `ideaminer.user-ideas.v1`. Async review upgrade is patched
+  into the record in place, so the sync return value is
+  immediately usable. The reviewer is also exposed via
+  `state.generator.reviewer` so callers can reuse the same scoring
+  pipeline that powers the explore flow.
+- `Storage.getUserIdeas()` — returns the user-submitted list,
+  newest first.
+- `Storage.deleteUserIdea(id)` — removes an entry by id, returns
+  `true` if removed.
+- `Storage.getMergedIdeas()` — async accessor that fetches
+  `data/mock-ideas.json` and prepends the user-ideas list, so a
+  future backend storage can be a single integration point.
+- `MockLLMProvider.setUserIdeas(ideas)` / `getUserIdeas()` — set
+  the user pool; subsequent `generateIdea()` calls draw from the
+  merged `[user, mock]` array (user first, so they appear early
+  in random exploration). Also propagates into `getIdeas()` so
+  the search path (`IdeaGenerator._loadIdeas()` →
+  `llm.getIdeas()`) sees user ideas too.
+- `MockLLMProvider.getLastPick()` — returns the original id,
+  field, `isUser` flag, and review of the most recent
+  `generateIdea()` pick, so the `IdeaGenerator` can preserve the
+  user-idea id (and `_user: true` flag) when wrapping the draft
+  into a `ReviewedIdea`. The base `LLMProvider.getLastPick()`
+  returns `null`, so real LLM providers need no change.
+- `app.js` boot path: `rebuildProvider()` now calls
+  `syncUserIdeasIntoProvider()` after each provider swap, and
+  `addUserIdea` / `deleteUserIdea` call it again so the pool
+  stays in sync without rebuilding the generator.
+- CSS: `.form-page` / `.form-page__field` / `.form-page__field-label`
+  (with `--required` modifier) / `.form-page__field-hint` /
+  `.form-page__voice-row` / `.form-page__textarea` /
+  `.form-page__mic` / `.form-page__actions`,
+  `.badge--yours` (mint/amber gradient), `.explore__add-button`
+  (pill), `.empty__cta-row`, `.my-ideas-list` /
+  `.my-ideas-item` / `.my-ideas-item__delete`, `.badge--field`,
+  plus a 360 px breakpoint for `.my-ideas-item`.
+
+### Changed
+- `IdeaGenerator.next` and `nextWithQuery` now preserve the
+  user-idea id (no `search-` prefix, no fresh `rv-` id) and reuse
+  the user-idea's review scores, so the user sees stable scores
+  on their own idea and feedback / save continue to dedupe
+  correctly.
+- `renderExploreIdea()` renders the "✨ Your idea" badge inside
+  the existing `.card__badges` flex row, before the three
+  Innovation / Feasibility / Importance badges.
+- `renderExploreNoMatch()` shows the new "+ Add your own idea"
+  CTA inside the empty-state action row.
+
+### Notes
+- The real LLM provider (`OpenAILLMProvider`) does not yet merge
+  user ideas into the search / random pool; that's a v0.6
+  follow-up. In mock mode (the default), everything works
+  end-to-end.
+- No export / import — user ideas live in your browser's
+  `localStorage` only. Clearing site data loses them.
+
 ## [0.4.0] - 2026-06-10
 
 ### Added
