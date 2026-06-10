@@ -106,9 +106,11 @@ the 🎤 button to speak. The query is run through a small keyword
 scoring algorithm in `js/idea-search.js`:
 
 - The input is lowercased, split on non-word characters, and tokens
-  with length < 2 are dropped.
+  with length < 2 are dropped. Common English stop-words (`the`, `of`,
+  `in`, `and`, `no`, ...) are filtered out so queries made entirely of
+  stop-words return the empty state instead of a false positive.
 - For each remaining token, an idea gets
-  - **+3** if the token appears as a substring of `question`,
+  - **+3** if the token appears as a **word-boundary match** in `question`,
   - **+2** if it appears in `background` or `significance`,
   - **+1** if it appears in any of `methods[i]`,
   - **+1** (bonus) if it appears in `field`.
@@ -119,7 +121,8 @@ scoring algorithm in `js/idea-search.js`:
   the question, so the user can always tell at a glance whether the
   displayed card was a search hit or a random pick.
 
-The scorer is intentionally simple — substring matching, no stemming,
+The scorer is intentionally simple — word-boundary keyword matching with
+a stop-word filter, no stemming,
 no semantic similarity. It is good enough for the 34 hand-written
 ideas in `data/mock-ideas.json`; a real production deployment would
 swap `js/idea-search.js` for a vector / semantic search backend, and
