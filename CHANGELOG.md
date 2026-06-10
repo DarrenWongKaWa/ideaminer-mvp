@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-06-10
+
+### Fixed
+- **Critical regression on first random pick after page load** —
+  the v0.5.0 refactor that introduced `_mergedPool()` in
+  `MockLLMProvider.generateIdea` removed the `await this._load()`
+  that v0.4.0 had. On a fresh page, `this._cache` is `null` so
+  the merged pool was `[...userIdeas, ...null]` = just user
+  ideas, and clicking "Next idea" with no user ideas yet threw
+  `MockLLMProvider: no ideas available (mock-ideas.json empty
+  and no user ideas)`. Fix: restore the `await this._load()`
+  before computing the merged pool. (Caught by the live site
+  smoke test; the v0.5.0 unit smoke test was non-representative
+  because it pre-loaded the cache.)
+
 ## [0.5.0] - 2026-06-10
 
 ### Added

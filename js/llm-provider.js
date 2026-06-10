@@ -174,8 +174,17 @@ export class MockLLMProvider extends LLMProvider {
       }
     });
 
-    // 2. Build the merged pool (user + mock)
-    const all = this._mergedPool();
+    // 2. Build the merged pool (user + mock). We must await the
+    //    underlying mock-ideas load — `_mergedPool()` reads
+    //    `this._cache` synchronously, and on the first call to
+    //    generateIdea() the cache is still null, so the merged
+    //    pool would be `[...userIdeas, ...null]` which is just
+    //    userIdeas. Awaiting `_load()` here is the same pattern
+    //    v0.4.0 used; the v0.5.0 refactor that introduced
+    //    `_mergedPool()` would otherwise regress the random flow
+    //    on a fresh page load.
+    const mock = await this._load();
+    const all = [...this._userIdeas, ...mock];
     if (all.length === 0) {
       throw new Error('MockLLMProvider: no ideas available (mock-ideas.json empty and no user ideas)');
     }
