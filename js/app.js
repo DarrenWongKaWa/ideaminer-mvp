@@ -177,7 +177,7 @@ function renderProfile() {
     'Physics', 'Chemistry', 'Biology', 'Computer Science', 'Mathematics',
     'Materials Science', 'Earth Science', 'Psychology', 'Economics', 'Other',
   ];
-  const ageOptions = ['Undergraduate', 'Master's', 'PhD', 'Postdoc', 'Professor', 'Other'];
+  const ageOptions = ['Undergraduate', "Master's", 'PhD', 'Postdoc', 'Professor', 'Other'];
 
   const opts = (arr, sel) => arr.map((x) =>
     `<option value="${esc(x)}" ${x === sel ? 'selected' : ''}>${esc(x)}</option>`
