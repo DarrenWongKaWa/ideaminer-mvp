@@ -264,4 +264,39 @@ commit. No visual or functional change.
 
 ---
 
-## VERDICT: PASS — task complete
+## Post-publish regression caught + fixed (v0.5.1)
+
+The v0.5.0 publish was followed within minutes by a live bug report
+from the user: clicking "Next idea" on a fresh page load (no user
+ideas yet) threw `MockLLMProvider: no ideas available
+(mock-ideas.json empty and no user ideas)`. Root cause: the v0.5.0
+refactor that introduced `_mergedPool()` removed the
+`await this._load()` that v0.4.0 had. On a fresh page,
+`this._cache` is `null`, so the merged pool was `[...userIdeas,
+...null]` = just user ideas. With no user ideas, `_mergedPool`
+returned `[]` and `generateIdea` threw.
+
+**Why the v0.5.0 smoke test missed it:** the smoke test explicitly
+called `await p._load()` before the random-pick loop, so
+`this._cache` was already populated. The fresh-page scenario was
+never exercised.
+
+**Fix (commit `e09541d`, CHANGELOG v0.5.1):** restore
+`const mock = await this._load();` before
+`const all = [...this._userIdeas, ...mock]`. Regression test
+verified locally: fresh `MockLLMProvider` instance, no pre-load,
+click "Next idea" → returns a real idea from `data/mock-ideas.json`
+(first pick: "Can quantum-sensor methods for direct dark-matter
+detection …"). Pushed and Pages redeployed (Actions completed
+success on first check).
+
+**Lesson for the verifier on the next plan:** when refactoring
+synchronous reads into helper methods (e.g. `_mergedPool()` from
+`this._cache`), explicitly call out the "this is still sync,
+caller must await the load" contract. The unit smoke test
+should include a "fresh provider, no pre-load" scenario for
+every public entry point that depends on the load.
+
+---
+
+## VERDICT: PASS — task complete (v0.5.1 hotfix shipped)
