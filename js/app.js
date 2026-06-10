@@ -1107,7 +1107,7 @@ function renderMyIdeasSection() {
     : `<ol class="my-ideas-list">${items}</ol>`;
 
   return `
-    <section class="card card--user-ideas">
+    <section class="card card--my-ideas">
       <div class="card__user-ideas-header">
         <h2 class="card__section-title">✨ My Ideas <span class="card__section-title-count">${total}</span></h2>
         <a class="btn btn--ghost" href="#/new">+ Add new</a>
