@@ -1,76 +1,40 @@
 /**
  * app.js
  * ------------------------------------------------------------
- * Router + application bootstrap.
+ * InsightRecoder v0.6 — Router + application bootstrap.
  *
  * Routes:
- *   #/profile   Refine Your Research Profile（form）
- *   #/explore   Explore Ideas (idea card + feedback buttons)
- *   #/saved     Saved (list of saved ideas)
- *   #/new       Add Your Own Idea (form, voice, localStorage)
- *   #/my        Profile (profile + feedback history + My Ideas)
- *   #/settings  Settings (LLM provider selection / API config / test)
+ *   #/profile   Research profile (field / direction / career stage)
+ *   #/capture   Single capture box + 🎤 mic + Save +
+ *               top-3 algorithmic suggestions panel
+ *   #/graph     vis-network graph view, color by Louvain community
+ *   #/timeline  Chronological list grouped by ISO week, with search
+ *   #/my        All inspirations with delete + 4 export buttons
+ *   #/settings  Provider picker (kept; no-op at runtime in v0.6)
  *
- * Extension points:
- *   1. createProvider() factory can swap mock / openai
- *   2. Replace LocalStorageProvider with ApiStorageProvider (preserves sync interface)
- *   3. Replace MockReviewer with LLM-as-judge
+ * Local-first: NO LLM calls at runtime. The only network call
+ * is the vis-network CDN load in `index.html`.
  * ------------------------------------------------------------
  */
 
-import { createProvider } from './llm-provider.js';
 import { LocalStorageProvider } from './storage.js';
-import { IdeaGenerator } from './idea-generator.js';
-import { MockReviewer } from './reviewer.js';
 import { VoiceInput } from './voice.js';
+import { suggestLinks, buildGraph, detectCommunities, colorizeCommunities } from './insight-connections.js';
+import { bestMatch, tokenizeQuery } from './idea-search.js';
+import {
+  buildExportPayload,
+  exportJson, exportMarkdown, exportStandaloneHtml, exportGraphml,
+  downloadBlob,
+} from './export.js';
 
-// ---------- LLM provider config (persisted) ----------
-const PROVIDER_STORAGE_KEY = 'ideaminer.provider.v1';
-
-/**
- * @typedef {Object} ProviderSettings
- * @property {'mock'|'openai'} type
- * @property {string} [endpoint]
- * @property {string} [apiKey]
- * @property {string} [model]
- */
-
-/**
- * Read and clean provider config (drop empty fields, apply default model, etc.).
- * @returns {ProviderSettings}
- */
-function loadProviderSettings() {
-  try {
-    const raw = window.localStorage.getItem(PROVIDER_STORAGE_KEY);
-    if (!raw) return { type: 'mock' };
-    const parsed = JSON.parse(raw);
-    if (parsed && (parsed.type === 'mock' || parsed.type === 'openai')) {
-      return {
-        type: parsed.type,
-        endpoint: typeof parsed.endpoint === 'string' ? parsed.endpoint : '',
-        apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : '',
-        model: typeof parsed.model === 'string' ? parsed.model : '',
-      };
-    }
-  } catch (_) { /* fall through */ }
-  return { type: 'mock' };
-}
-
-function saveProviderSettings(cfg) {
-  try {
-    window.localStorage.setItem(PROVIDER_STORAGE_KEY, JSON.stringify(cfg));
-  } catch (_) { /* ignore quota */ }
-}
+const PROVIDER_STORAGE_KEY = 'insightrecoder.provider.v1';
 
 // ---------- Global state ----------
 const state = {
   storage: new LocalStorageProvider(),
   voice: new VoiceInput(),
-  llm: null,            // Built by init() via createProvider
-  generator: null,      // Built by init() (depends on llm)
-  ready: false,         // init() complete
-  current: null,        // Currently displayed ReviewedIdea
-  currentAbort: null,   // AbortController for the current IdeaGenerator.next()
+  ready: false,
+  network: null,        // vis-network instance, kept across re-renders
 };
 
 // ---------- Util: safe HTML string escaping ----------
@@ -93,13 +57,12 @@ function toast(msg, kind) {
     t.className = 'toast';
     document.body.appendChild(t);
   }
-  // Extract emoji icon (if the first char of the message is an emoji, render it as the leading icon)
   let icon = '';
   let text = msg;
-  const emojiMatch = /^([\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}])\s*/u.exec(msg);
-  if (emojiMatch) {
-    icon = emojiMatch[1];
-    text = msg.slice(emojiMatch[0].length);
+  const m = /^([\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}])\s*/u.exec(msg);
+  if (m) {
+    icon = m[1];
+    text = msg.slice(m[0].length);
   }
   t.innerHTML = icon
     ? `<span class="toast__icon" aria-hidden="true">${esc(icon)}</span><span>${esc(text)}</span>`
@@ -113,54 +76,31 @@ function toast(msg, kind) {
   toastTimer = setTimeout(() => t.classList.remove('toast--show'), 1800);
 }
 
-// ---------- Util: clipboard ----------
-async function copyText(text) {
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch (_) { /* fall through */ }
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.left = '-9999px';
-    document.body.appendChild(ta);
-    ta.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    return ok;
-  } catch (_) {
-    return false;
-  }
-}
-
-// ---------- Render: bottom nav (4 items: Explore / Saved / Profile / Settings) ----------
+// ---------- Util: bottom nav (4 items: Capture / Graph / My / Settings) ----------
 function bottomNav(active) {
   return `
     <nav class="bottom-nav" role="navigation" aria-label="Main navigation">
-      <a class="bottom-nav__item ${active === 'explore' ? 'is-active' : ''}" href="#/explore" aria-label="Explore">
-        <span class="bottom-nav__icon" aria-hidden="true">🧭</span>
-        <span class="bottom-nav__label">Explore</span>
+      <a class="bottom-nav__item ${active === 'capture' ? 'is-active' : ''}" href="#/capture" aria-label="Capture">
+        <span class="bottom-nav__icon" aria-hidden="true">✏️</span>
+        <span class="bottom-nav__label">Capture</span>
       </a>
-      <a class="bottom-nav__item ${active === 'saved' ? 'is-active' : ''}" href="#/saved" aria-label="Saved">
-        <span class="bottom-nav__icon" aria-hidden="true">🗂️</span>
-        <span class="bottom-nav__label">Saved</span>
+      <a class="bottom-nav__item ${active === 'graph' ? 'is-active' : ''}" href="#/graph" aria-label="Graph">
+        <span class="bottom-nav__icon" aria-hidden="true">🕸️</span>
+        <span class="bottom-nav__label">Graph</span>
       </a>
-      <a class="bottom-nav__item ${active === 'my' ? 'is-active' : ''}" href="#/my" aria-label="Profile">
-        <span class="bottom-nav__icon" aria-hidden="true">👤</span>
-        <span class="bottom-nav__label">Profile</span>
+      <a class="bottom-nav__item ${active === 'timeline' ? 'is-active' : ''}" href="#/timeline" aria-label="Timeline">
+        <span class="bottom-nav__icon" aria-hidden="true">📅</span>
+        <span class="bottom-nav__label">Timeline</span>
       </a>
-      <a class="bottom-nav__item ${active === 'settings' ? 'is-active' : ''}" href="#/settings" aria-label="Settings">
-        <span class="bottom-nav__icon" aria-hidden="true">⚙️</span>
-        <span class="bottom-nav__label">Settings</span>
+      <a class="bottom-nav__item ${active === 'my' ? 'is-active' : ''}" href="#/my" aria-label="My">
+        <span class="bottom-nav__icon" aria-hidden="true">📚</span>
+        <span class="bottom-nav__label">My</span>
       </a>
     </nav>
   `;
 }
 
-// ---------- Generic empty state ----------
+// ---------- Util: empty state ----------
 function emptyState(icon, title, body, cta) {
   return `
     <div class="empty">
@@ -172,7 +112,9 @@ function emptyState(icon, title, body, cta) {
   `;
 }
 
-// ---------- Render: Refine Your Research Profile (#/profile) ----------
+// ============================================================
+// Page: #/profile
+// ============================================================
 function renderProfile() {
   const profile = state.storage.getProfile();
   const fieldOptions = [
@@ -187,21 +129,20 @@ function renderProfile() {
 
   const placeholder = profile ? '' : 'placeholder="e.g. machine learning, quantum computing"';
   const val = profile ? esc(profile.direction || '') : '';
-
   const voiceSupported = state.voice.isSupported();
 
   return `
     <section class="page page--profile">
       <header class="page__header">
-        <h1 class="page__title">Refine Your Research Profile</h1>
-        <p class="page__subtitle">Tell us about your research so we can tailor ideas for you</p>
+        <h1 class="page__title">Research Profile</h1>
+        <p class="page__subtitle">Used to tag and color your inspirations. Optional.</p>
       </header>
 
       <form id="profile-form" class="form" novalidate>
         <label class="form__field">
           <span class="form__label">Field</span>
-          <select class="form__input" name="field" required>
-            <option value="" disabled ${profile ? '' : 'selected'}>Select your field</option>
+          <select class="form__input" name="field">
+            <option value="" ${profile ? '' : 'selected'}>Select your field</option>
             ${opts(fieldOptions, profile && profile.field)}
           </select>
         </label>
@@ -214,26 +155,20 @@ function renderProfile() {
               <button type="button" class="form__mic" data-voice-target="direction" aria-label="Voice input for research direction">
                 <span aria-hidden="true">🎤</span>
               </button>
-              <span class="voice-dots" data-voice-dots hidden aria-hidden="true">
-                <span class="voice-dots__dot"></span>
-                <span class="voice-dots__dot"></span>
-                <span class="voice-dots__dot"></span>
-                <span class="voice-dots__dot"></span>
-                <span class="voice-dots__dot"></span>
-              </span>
             ` : ''}
           </div>
         </label>
 
         <label class="form__field">
           <span class="form__label">Career stage</span>
-          <select class="form__input" name="age" required>
-            <option value="" disabled ${profile && profile.age ? '' : 'selected'}>Please choose a career stage</option>
+          <select class="form__input" name="age">
+            <option value="" ${profile && profile.age ? '' : 'selected'}>Please choose a career stage</option>
             ${opts(ageOptions, profile && profile.age)}
           </select>
         </label>
 
-        <button type="submit" class="btn btn--primary">Continue</button>
+        <button type="submit" class="btn btn--primary">Save</button>
+        <a class="btn btn--ghost" href="#/capture">Skip →</a>
       </form>
     </section>
   `;
@@ -242,7 +177,6 @@ function renderProfile() {
 function bindProfileEvents() {
   const form = document.getElementById('profile-form');
   if (!form) return;
-
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const fd = new FormData(form);
@@ -251,1136 +185,719 @@ function bindProfileEvents() {
       direction: String(fd.get('direction') || '').trim(),
       age: String(fd.get('age') || '').trim(),
     };
-    if (!profile.field) { toast('⚠️ Please choose a field', 'warn'); return; }
-    if (!profile.direction) { toast('⚠️ Please fill in your research direction', 'warn'); return; }
-    if (!profile.age) { toast('⚠️ Please choose a career stage', 'warn'); return; }
-
     state.storage.setProfile(profile);
-    location.hash = '#/explore';
+    toast('✅ Profile saved', 'success');
+    location.hash = '#/capture';
   });
-
-  // Voice input button
   form.querySelectorAll('[data-voice-target]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const targetName = btn.getAttribute('data-voice-target');
       const input = form.querySelector(`[name="${targetName}"]`);
       if (!input) return;
-      const dots = form.querySelector('[data-voice-dots]');
-
       if (state.voice.isRecording() && state.voice._currentTarget === targetName) {
         state.voice.stop();
         btn.classList.remove('is-recording');
-        if (dots) dots.hidden = true;
         return;
       }
       state.voice._currentTarget = targetName;
       btn.classList.add('is-recording');
-      if (dots) dots.hidden = false;
       state.voice.start(
-        (text, isFinal) => {
-          input.value = text;
-          if (isFinal) {
-            btn.classList.remove('is-recording');
-            if (dots) dots.hidden = true;
-            state.voice._currentTarget = null;
-          }
-        },
+        (text, isFinal) => { input.value = text; if (isFinal) { btn.classList.remove('is-recording'); state.voice._currentTarget = null; } },
         (err) => {
           btn.classList.remove('is-recording');
-          if (dots) dots.hidden = true;
           state.voice._currentTarget = null;
-          if (err === 'not-allowed' || err === 'service-not-allowed') {
-            toast('⚠️ Please allow microphone access (Browser Settings → Site permissions)', 'warn');
-          } else if (err === 'no-speech') {
-            toast("⚠️ Didn't hear anything, please try again", 'warn');
-          } else if (err === 'audio-capture') {
-            toast('⚠️ No microphone device found', 'error');
-          } else if (err !== 'aborted') {
-            toast('⚠️ Voice input failed: ' + err, 'error');
-          }
+          if (err === 'not-allowed' || err === 'service-not-allowed') toast('⚠️ Please allow microphone access', 'warn');
+          else if (err !== 'aborted') toast('⚠️ Voice input failed: ' + err, 'error');
         }
       );
     });
   });
 }
 
-// ---------- Render: Explore Ideas (#/explore) ----------
-function renderExploreSkeleton() {
-  return `
-    <section class="page page--explore">
-      <header class="page__header">
-        <h1 class="page__title">Explore Ideas</h1>
-        <p class="page__subtitle">Discover research questions that interest you</p>
-      </header>
-      <div class="card card--loading" aria-busy="true">
-        <div class="card__skeleton">
-          <span class="skeleton-bar skeleton-bar--lg"></span>
-          <span class="skeleton-bar skeleton-bar--md"></span>
-          <span class="skeleton-bar skeleton-bar--md"></span>
-          <span class="skeleton-bar skeleton-bar--sm"></span>
-        </div>
-        <p class="card__loading-text">Generating an idea for you…</p>
-      </div>
-      ${bottomNav('explore')}
-    </section>
-  `;
-}
-
-// ---------- Render: small "+ Add your own idea" link ----------
-// Used both below the search row on the explore page and in the
-// "no match" empty state.
-function renderExploreAddButton() {
-  return `
-    <a class="explore__add-button" href="#/new" aria-label="Add your own idea">
-      <span aria-hidden="true">+</span>
-      <span>Add your own idea</span>
-    </a>
-  `;
-}
-
-// ---------- Render: search row (text + voice + submit + clear) ----------
-function renderSearchRow(currentQuery) {
-  const q = currentQuery || '';
+// ============================================================
+// Page: #/capture
+// ============================================================
+function renderCapture() {
+  const all = state.storage.getInspirations();
   const voiceSupported = state.voice.isSupported();
   return `
-    <form id="search-form" class="search" role="search" autocomplete="off">
-      <span class="search__icon" aria-hidden="true">🔍</span>
-      <input
-        id="search-input"
-        class="search__input"
-        name="q"
-        type="text"
-        value="${esc(q)}"
-        placeholder="Describe what you want to research, or use 🎤"
-        aria-label="Search ideas by text or voice"
-        spellcheck="false"
-        autocapitalize="off"
-        autocorrect="off"
-      />
-      ${voiceSupported ? `
-        <button type="button" id="search-mic" class="search__mic" aria-label="Voice input for search">
-          <span aria-hidden="true">🎤</span>
-        </button>
-      ` : ''}
-      <button type="submit" id="search-submit" class="search__submit" aria-label="Search">
-        <span aria-hidden="true">Search</span>
-      </button>
-      <button type="button" id="search-clear" class="search__clear" aria-label="Clear search" title="Clear search">
-        <span aria-hidden="true">×</span>
-      </button>
-    </form>
-  `;
-}
-
-function renderExploreIdea(idea) {
-  const review = idea.review || { innovation: 0, feasibility: 0, importance: 0 };
-  const methods = (idea.methods || []).map((m) =>
-    `<li class="methods__item">${esc(m)}</li>`
-  ).join('');
-  const matchedQuery = idea && idea._matchedQuery;
-  const matchBadge = matchedQuery
-    ? `<div class="search__match-badge" role="status">🔍 Matched: <em>${esc(matchedQuery)}</em></div>`
-    : '';
-  // "✨ Your idea" badge — rendered when the displayed card is a
-  // user-submitted entry. We check both the explicit `_user` flag
-  // and the id prefix for safety (older entries may lack the flag).
-  const isUser = !!(idea && (idea._user || (idea.id && /^user-/.test(idea.id))));
-  const userBadge = isUser
-    ? `<span class="badge badge--yours" title="Submitted by you">✨ Your idea</span>`
-    : '';
-
-  return `
-    <section class="page page--explore">
+    <section class="page page--capture">
       <header class="page__header">
-        <h1 class="page__title">Explore Ideas</h1>
-        <p class="page__subtitle">Discover research questions that interest you</p>
+        <h1 class="page__title">Capture</h1>
+        <p class="page__subtitle">${all.length} inspiration${all.length === 1 ? '' : 's'} recorded</p>
       </header>
 
-      ${renderSearchRow(matchedQuery || '')}
-
-      ${renderExploreAddButton()}
-
-      ${matchBadge}
-
-      <article class="card" data-idea-id="${esc(idea.id)}">
-        <h2 class="card__question">${esc(idea.question)}</h2>
-
-        <div class="card__badges" aria-label="Review scores">
-          ${userBadge}
-          <span class="badge badge--innovation" title="Innovation">Innovation ${review.innovation}</span>
-          <span class="badge badge--feasibility" title="Feasibility">Feasibility ${review.feasibility}</span>
-          <span class="badge badge--importance" title="Importance">Importance ${review.importance}</span>
+      <div class="capture-box" role="region" aria-label="Capture an inspiration">
+        <textarea
+          id="capture-textarea"
+          class="capture-box__textarea"
+          rows="3"
+          placeholder="What's on your mind? A half-sentence, a phrase, a question…"
+          aria-label="Inspiration text"
+        ></textarea>
+        <div class="capture-box__actions">
+          ${voiceSupported ? `
+            <button type="button" id="capture-mic" class="capture-box__mic" aria-label="Voice input for capture">
+              <span aria-hidden="true">🎤</span>
+            </button>
+          ` : ''}
+          <span class="capture-box__hint">⌘/Ctrl + Enter to save</span>
+          <button type="button" id="capture-save" class="btn btn--primary capture-box__save" disabled>Save</button>
         </div>
+      </div>
 
-        <section class="card__section">
-          <h3 class="card__section-title">📋 Background</h3>
-          <p class="card__section-body">${esc(idea.background)}</p>
-        </section>
+      <div id="capture-suggestions" class="capture-suggestions" aria-live="polite"></div>
 
-        <section class="card__section">
-          <h3 class="card__section-title">💡 Why it matters</h3>
-          <p class="card__section-body">${esc(idea.significance)}</p>
-        </section>
-
-        <section class="card__section">
-          <h3 class="card__section-title">🔬 Methods</h3>
-          <ol class="methods">${methods}</ol>
-        </section>
-
-        <div class="feedback" role="group" aria-label="Feedback">
-          <button type="button" class="feedback__btn" data-fb="dislike">👎 Dislike</button>
-          <button type="button" class="feedback__btn" data-fb="unrelated">🚫 Unrelated</button>
-          <button type="button" class="feedback__btn feedback__btn--like" data-fb="like">❤️ Like</button>
-          <button type="button" class="feedback__btn" data-fb="copy">📋 Copy</button>
-        </div>
-      </article>
-
-      ${bottomNav('explore')}
+      <div class="capture-recent">
+        <h2 class="capture-recent__title">Recent</h2>
+        ${renderRecent(all.slice(0, 5))}
+      </div>
     </section>
   `;
 }
 
-function renderExploreEmpty(profile) {
-  return `
-    <section class="page page--explore">
-      <header class="page__header">
-        <h1 class="page__title">Explore Ideas</h1>
-        <p class="page__subtitle">Discover research questions that interest you</p>
-      </header>
-      ${emptyState(
-        '🔭',
-        'No research profile yet',
-        `Please <a class="link" href="#/profile">set up your research profile</a> first. We will generate ideas based on your field and direction.`,
-        `<a class="btn btn--primary" href="#/profile">Set up now</a>`
-      )}
-      ${bottomNav('explore')}
-    </section>
-  `;
-}
-
-function renderExploreNoMatch(query) {
-  return `
-    <section class="page page--explore">
-      <header class="page__header">
-        <h1 class="page__title">Explore Ideas</h1>
-        <p class="page__subtitle">Discover research questions that interest you</p>
-      </header>
-      ${renderSearchRow(query || '')}
-      ${renderExploreAddButton()}
-      ${emptyState(
-        '🔍',
-        `No idea matched “${esc(query || '')}”`,
-        `Try a different term, or let us pick a random one for you. You can also add your own idea to the pool.`,
-        `<div class="empty__cta-row">
-          <button class="btn btn--primary" id="surprise-me" type="button">Surprise me</button>
-          <a class="btn btn--ghost" href="#/new">+ Add your own idea</a>
-        </div>`
-      )}
-      ${bottomNav('explore')}
-    </section>
-  `;
-}
-
-function bindExploreIdeaEvents() {
-  bindSearchRowEvents();
-  const card = document.querySelector('.card[data-idea-id]');
-  if (!card) return;
-  const ideaId = card.getAttribute('data-idea-id');
-
-  card.querySelectorAll('.feedback__btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const fb = btn.getAttribute('data-fb');
-      if (fb === 'copy') {
-        const text = collectIdeaText(card);
-        copyText(text).then((ok) => toast(ok ? '✅ Copied' : '❌ Copy failed', ok ? 'success' : 'error'));
-        return;
-      }
-      if (fb === 'like') {
-        const idea = state.current;
-        if (idea) state.storage.saveIdea(idea);
-        state.storage.recordFeedback(ideaId, 'like');
-        toast('✅ Saved', 'success');
-        fetchNext();
-        return;
-      }
-      // dislike / unrelated
-      state.storage.recordFeedback(ideaId, fb);
-      fetchNext();
-    });
-  });
-}
-
-function bindExploreNoMatchEvents() {
-  bindSearchRowEvents();
-  const surprise = document.getElementById('surprise-me');
-  if (surprise) {
-    surprise.addEventListener('click', () => {
-      const input = document.getElementById('search-input');
-      if (input) input.value = '';
-      fetchNext();
-    });
+function renderRecent(items) {
+  if (!items.length) {
+    return `<p class="empty__body">No inspirations yet. Write something above and tap Save.</p>`;
   }
+  return `<ol class="capture-recent__list">${items.map((it) => `
+    <li class="inspiration-card inspiration-card--mini" data-id="${esc(it.id)}">
+      <div class="inspiration-card__text">${esc(it.text)}</div>
+      <div class="inspiration-card__meta">${formatDate(it.createdAt)}${(it.tags || []).length ? ' · ' + (it.tags || []).map((t) => '#' + esc(t)).join(' ') : ''}</div>
+    </li>
+  `).join('')}</ol>`;
 }
 
-/**
- * Wire up the search row: Enter / Submit -> run search; Clear -> reset;
- * Mic -> VoiceInput (lang='zh-CN', mirrors the profile-form pattern).
- */
-function bindSearchRowEvents() {
-  const form = document.getElementById('search-form');
-  if (!form) return;
-  const input = form.querySelector('#search-input');
-  const mic = form.querySelector('#search-mic');
-  const clear = form.querySelector('#search-clear');
+function bindCaptureEvents() {
+  const textarea = document.getElementById('capture-textarea');
+  const saveBtn = document.getElementById('capture-save');
+  const micBtn = document.getElementById('capture-mic');
+  if (!textarea || !saveBtn) return;
 
-  // Submit (Enter or Search button) -> run search
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const q = (input && input.value ? input.value : '').trim();
-    runSearch(q);
+  const refreshSaveEnabled = () => {
+    saveBtn.disabled = String(textarea.value || '').trim().length === 0;
+  };
+  textarea.addEventListener('input', refreshSaveEnabled);
+  refreshSaveEnabled();
+
+  textarea.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      saveBtn.click();
+    }
   });
 
-  // Clear button -> reset to random
-  if (clear) {
-    clear.addEventListener('click', () => {
-      if (input) input.value = '';
-      fetchNext();
-    });
-  }
+  saveBtn.addEventListener('click', () => onSave());
 
-  // Mic button -> VoiceInput
-  if (mic) {
-    mic.addEventListener('click', () => {
-      if (state.voice.isRecording() && state.voice._currentTarget === 'search') {
+  if (micBtn) {
+    micBtn.addEventListener('click', () => {
+      if (state.voice.isRecording() && state.voice._currentTarget === 'capture') {
         state.voice.stop();
-        mic.classList.remove('is-recording');
-        state.voice._currentTarget = null;
+        micBtn.classList.remove('is-recording');
         return;
       }
-      state.voice._currentTarget = 'search';
-      mic.classList.add('is-recording');
+      state.voice._currentTarget = 'capture';
+      micBtn.classList.add('is-recording');
       state.voice.start(
-        (text, isFinal) => {
-          if (input) input.value = text;
-          if (isFinal) {
-            mic.classList.remove('is-recording');
-            state.voice._currentTarget = null;
-            // Auto-submit on final utterance so the user does not
-            // have to tap Search again.
-            const q = (input && input.value ? input.value : '').trim();
-            if (q) runSearch(q);
-          }
-        },
+        (text, isFinal) => { textarea.value = text; refreshSaveEnabled(); if (isFinal) { micBtn.classList.remove('is-recording'); state.voice._currentTarget = null; } },
         (err) => {
-          mic.classList.remove('is-recording');
+          micBtn.classList.remove('is-recording');
           state.voice._currentTarget = null;
-          if (err === 'not-allowed' || err === 'service-not-allowed') {
-            toast('⚠️ Please allow microphone access (Browser Settings → Site permissions)', 'warn');
-          } else if (err === 'no-speech') {
-            toast("⚠️ Didn't hear anything, please try again", 'warn');
-          } else if (err === 'audio-capture') {
-            toast('⚠️ No microphone device found', 'error');
-          } else if (err === 'unsupported') {
-            toast('⚠️ This browser does not support voice input', 'warn');
-          } else if (err !== 'aborted') {
-            toast('⚠️ Voice input failed: ' + err, 'error');
-          }
+          if (err === 'not-allowed' || err === 'service-not-allowed') toast('⚠️ Please allow microphone access', 'warn');
+          else if (err === 'no-speech') toast("⚠️ Didn't hear anything", 'warn');
+          else if (err === 'audio-capture') toast('⚠️ No microphone found', 'error');
+          else if (err === 'unsupported') toast('⚠️ This browser does not support voice input', 'warn');
+          else if (err !== 'aborted') toast('⚠️ Voice input failed: ' + err, 'error');
         }
       );
     });
   }
-}
 
-function collectIdeaText(cardEl) {
-  const q = cardEl.querySelector('.card__question')?.textContent || '';
-  const bg = cardEl.querySelectorAll('.card__section-body')[0]?.textContent || '';
-  const sig = cardEl.querySelectorAll('.card__section-body')[1]?.textContent || '';
-  const methods = Array.from(cardEl.querySelectorAll('.methods__item'))
-    .map((li, i) => `${i + 1}. ${li.textContent}`)
-    .join('\n');
-  return `Question: ${q}\n\nBackground: ${bg}\n\nSignificance: ${sig}\n\nMethods:\n${methods}`;
-}
-
-async function fetchNext() {
-  // If the LLM provider has not finished initializing (first cold load
-  // or right after a provider swap in Settings), wait for init() and
-  // then re-enter the same skeleton -> render flow.
-  if (!state.ready || !state.generator) {
-    document.getElementById('app').innerHTML = renderExploreSkeleton();
-    await init();
-    if (state.currentAbort && state.currentAbort.signal.aborted) return;
-    if (!state.generator) {
-      document.getElementById('app').innerHTML = `
-        <section class="page page--explore">
-          <header class="page__header">
-            <h1 class="page__title">Explore Ideas</h1>
-            <p class="page__subtitle">Discover research questions that interest you</p>
-          </header>
-          ${emptyState('😕', 'Provider not ready', 'Please retry in a moment.',
-            `<button class="btn btn--primary" id="retry" type="button">Retry</button>`)}
-          ${bottomNav('explore')}
-        </section>
-      `;
-      const retry = document.getElementById('retry');
-      if (retry) retry.addEventListener('click', fetchNext);
-      return;
+  function onSave() {
+    const text = String(textarea.value || '').trim();
+    if (!text) { toast('⚠️ Inspiration is empty', 'warn'); return; }
+    const source = (state.voice._currentTarget === 'capture') ? 'voice' : 'text';
+    const profile = state.storage.getProfile();
+    const tags = [];
+    if (profile && profile.field) tags.push(String(profile.field).toLowerCase());
+    const record = state.storage.addInspiration({ text, tags, source });
+    toast('✅ Saved', 'success');
+    textarea.value = '';
+    refreshSaveEnabled();
+    showSuggestions(record);
+    // Refresh the recent list in place
+    const recent = document.querySelector('.capture-recent');
+    if (recent) {
+      const list = state.storage.getInspirations();
+      recent.innerHTML = `<h2 class="capture-recent__title">Recent</h2>${renderRecent(list.slice(0, 5))}`;
+      const subtitle = document.querySelector('.page--capture .page__subtitle');
+      if (subtitle) subtitle.textContent = `${list.length} inspiration${list.length === 1 ? '' : 's'} recorded`;
     }
   }
-
-  // Cancel the previous request
-  if (state.currentAbort) {
-    try { state.currentAbort.abort(); } catch (_) {}
-  }
-  const ac = new AbortController();
-  state.currentAbort = ac;
-
-  const profile = state.storage.getProfile();
-  if (!profile) {
-    render();
-    return;
-  }
-
-  // Render the skeleton first
-  document.getElementById('app').innerHTML = renderExploreSkeleton();
-
-  try {
-    const idea = await state.generator.next(profile, ac.signal);
-    if (ac.signal.aborted) return;  // User has left this page
-    state.current = idea;
-    document.getElementById('app').innerHTML = renderExploreIdea(idea);
-    bindExploreIdeaEvents();
-  } catch (err) {
-    if (ac.signal.aborted) return;
-    console.error(err);
-    const isAbort = err && (err.name === 'AbortError' || /aborted/i.test(String(err.message)));
-    const errMsg = isAbort ? 'Cancelled' : (err.message || String(err));
-    document.getElementById('app').innerHTML = `
-      <section class="page page--explore">
-        <header class="page__header">
-          <h1 class="page__title">Explore Ideas</h1>
-          <p class="page__subtitle">Discover research questions that interest you</p>
-        </header>
-        ${emptyState(
-          '😕',
-          'Failed to generate idea',
-          esc(errMsg),
-          `<button class="btn btn--primary" id="retry">Retry</button>`
-        )}
-        ${bottomNav('explore')}
-      </section>
-    `;
-    const retry = document.getElementById('retry');
-    if (retry) retry.addEventListener('click', fetchNext);
-  }
 }
 
-/**
- * Run a text/voice search and render the matched idea, the no-match
- * empty state, or an error empty state. Mirrors the skeleton/replace
- * lifecycle of fetchNext().
- * @param {string} rawQuery
- */
-async function runSearch(rawQuery) {
-  if (!state.ready || !state.generator) {
-    render();
+function showSuggestions(record) {
+  const container = document.getElementById('capture-suggestions');
+  if (!container) return;
+  const all = state.storage.getInspirations();
+  const suggestions = suggestLinks(record, all, 3);
+  if (suggestions.length === 0) {
+    container.innerHTML = `<p class="capture-suggestions__empty">No similar past inspirations yet — this is your first one in this neighborhood.</p>`;
     return;
   }
-  if (state.currentAbort) {
-    try { state.currentAbort.abort(); } catch (_) {}
-  }
-  const ac = new AbortController();
-  state.currentAbort = ac;
-
-  const profile = state.storage.getProfile();
-  if (!profile) {
-    render();
-    return;
-  }
-
-  // Skeleton first
-  document.getElementById('app').innerHTML = renderExploreSkeleton();
-
-  try {
-    const idea = await state.generator.nextWithQuery(profile, rawQuery, ac.signal);
-    if (ac.signal.aborted) return;
-    state.current = idea;
-    document.getElementById('app').innerHTML = renderExploreIdea(idea);
-    bindExploreIdeaEvents();
-  } catch (err) {
-    if (ac.signal.aborted) return;
-    const msg = err && err.message ? String(err.message) : String(err);
-    // Recognizable no-match message -> dedicated empty state with "Surprise me"
-    if (/^No idea matched /.test(msg)) {
-      const m = msg.match(/^No idea matched (.*)$/);
-      const q = m ? m[1].replace(/^["']|["']$/g, '') : rawQuery;
-      state.current = null;
-      document.getElementById('app').innerHTML = renderExploreNoMatch(q);
-      bindExploreNoMatchEvents();
-      return;
-    }
-    if (err && (err.name === 'AbortError' || /aborted/i.test(msg))) return;
-    console.error(err);
-    state.current = null;
-    document.getElementById('app').innerHTML = `
-      <section class="page page--explore">
-        <header class="page__header">
-          <h1 class="page__title">Explore Ideas</h1>
-          <p class="page__subtitle">Discover research questions that interest you</p>
-        </header>
-        ${renderSearchRow(rawQuery)}
-        ${emptyState(
-          '😕',
-          'Search failed',
-          esc(msg),
-          `<button class="btn btn--primary" id="retry-search" type="button">Try again</button>`
-        )}
-        ${bottomNav('explore')}
-      </section>
-    `;
-    const retry = document.getElementById('retry-search');
-    if (retry) retry.addEventListener('click', () => runSearch(rawQuery));
-  }
-}
-
-// ---------- Render: Saved (#/saved) ----------
-function renderSaved() {
-  const list = state.storage.getSavedIdeas();
-  if (list.length === 0) {
-    return `
-      <section class="page page--saved">
-        <header class="page__header">
-          <h1 class="page__title">Saved</h1>
-          <p class="page__subtitle">Ideas you have saved</p>
-        </header>
-        ${emptyState(
-          '🗂️',
-          'No saved ideas yet',
-          "Find an idea you like on the Explore Ideas page and tap \u2764\ufe0f to save it.",
-          `<a class="btn btn--primary" href="#/explore">Start exploring</a>`
-        )}
-        ${bottomNav('saved')}
-      </section>
-    `;
-  }
-
-  const cards = list.map((it) => `
-    <article class="card card--saved" data-saved-id="${esc(it.id)}">
-      <h2 class="card__question">${esc(it.question)}</h2>
-      <p class="card__excerpt">${esc((it.background || '').slice(0, 80))}${(it.background || '').length > 80 ? '…' : ''}</p>
-      <div class="card__meta">
-        ${it.review ? `<span class="badge badge--innovation">Innovation ${it.review.innovation}</span>
-        <span class="badge badge--feasibility">Feasibility ${it.review.feasibility}</span>
-        <span class="badge badge--importance">Importance ${it.review.importance}</span>` : ''}
-        <button type="button" class="btn btn--ghost" data-remove="${esc(it.id)}">Remove</button>
-      </div>
-    </article>
-  `).join('');
-
-  return `
-    <section class="page page--saved">
-      <header class="page__header">
-        <h1 class="page__title">Saved</h1>
-        <p class="page__subtitle">${list.length} total</p>
-      </header>
-      <div class="cards">${cards}</div>
-      ${bottomNav('saved')}
-    </section>
+  container.innerHTML = `
+    <h2 class="capture-suggestions__title">Possible links</h2>
+    <div class="capture-suggestions__list">
+      ${suggestions.map((s, i) => `
+        <div class="suggestion-card" data-id="${esc(s.inspiration.id)}">
+          <div class="suggestion-card__rank">#${i + 1}</div>
+          <div class="suggestion-card__body">
+            <div class="suggestion-card__text">${esc(s.inspiration.text)}</div>
+            <div class="suggestion-card__meta">score ${s.score.toFixed(2)} · ${formatDate(s.inspiration.createdAt)}</div>
+          </div>
+          <button type="button" class="btn btn--ghost suggestion-card__pin" data-pin="${esc(record.id)}::${esc(s.inspiration.id)}">🔗 Pin</button>
+        </div>
+      `).join('')}
+    </div>
   `;
-}
-
-function bindSavedEvents() {
-  document.querySelectorAll('[data-remove]').forEach((btn) => {
+  container.querySelectorAll('[data-pin]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const id = btn.getAttribute('data-remove');
-      state.storage.removeIdea(id);
-      render();
-      toast('✅ Removed', 'success');
+      const [src, tgt] = btn.getAttribute('data-pin').split('::');
+      if (!src || !tgt) return;
+      // Compute score: re-run suggestLinks for stable score
+      const target = state.storage.getInspiration(tgt);
+      if (!target) return;
+      const score = suggestLinks({ id: src, text: state.storage.getInspiration(src)?.text || '' }, [target], 1)[0]?.score || 0;
+      state.storage.addLink(src, tgt, score, 'pinned');
+      toast('🔗 Pinned', 'success');
+      btn.disabled = true;
+      btn.textContent = '✓ Pinned';
     });
   });
 }
 
-// ---------- Render: Profile (#/my) ----------
+// ============================================================
+// Page: #/graph
+// ============================================================
+function renderGraph() {
+  return `
+    <section class="page page--graph">
+      <header class="page__header">
+        <h1 class="page__title">Graph</h1>
+        <p class="page__subtitle" id="graph-subtitle">Loading…</p>
+      </header>
+
+      <div class="graph-toolbar">
+        <button type="button" class="btn btn--ghost" id="recompute-graph">Recompute graph</button>
+        <span class="graph-toolbar__hint" id="graph-stats"></span>
+      </div>
+
+      <div id="graph-container" class="graph-container"></div>
+
+      <aside id="graph-sidepanel" class="graph-sidepanel" hidden>
+        <button type="button" class="graph-sidepanel__close" id="graph-sidepanel-close" aria-label="Close">×</button>
+        <h2 class="graph-sidepanel__title">Inspiration</h2>
+        <div class="graph-sidepanel__text" id="graph-sidepanel-text"></div>
+        <div class="graph-sidepanel__meta" id="graph-sidepanel-meta"></div>
+        <h3 class="graph-sidepanel__sub">Connected to</h3>
+        <ul class="graph-sidepanel__edges" id="graph-sidepanel-edges"></ul>
+        <div class="graph-sidepanel__actions">
+          <button type="button" class="btn btn--ghost" id="graph-sidepanel-delete">Delete</button>
+        </div>
+      </aside>
+
+      <div class="graph-legend" id="graph-legend"></div>
+    </section>
+  `;
+}
+
+let _graphClickListener = null;
+let _graphSelectListener = null;
+
+function bindGraphEvents() {
+  const recompute = document.getElementById('recompute-graph');
+  if (recompute) recompute.addEventListener('click', () => mountGraph());
+  const close = document.getElementById('graph-sidepanel-close');
+  if (close) close.addEventListener('click', () => {
+    const panel = document.getElementById('graph-sidepanel');
+    if (panel) panel.hidden = true;
+  });
+  mountGraph();
+}
+
+function mountGraph() {
+  const container = document.getElementById('graph-container');
+  if (!container) return;
+  if (typeof window === 'undefined' || !window.vis || !window.vis.Network) {
+    container.innerHTML = `<p class="empty__body">Loading graph library… (vis-network CDN)</p>`;
+    return;
+  }
+  const inspirations = state.storage.getInspirations();
+  const userLinks = state.storage.getLinks();
+  if (inspirations.length === 0) {
+    container.innerHTML = emptyState('🕸️', 'No inspirations yet', 'Capture a few in #/capture and they will appear here.',
+      `<a class="btn btn--primary" href="#/capture">Go to capture</a>`);
+    const sub = document.getElementById('graph-subtitle');
+    if (sub) sub.textContent = '0 nodes · 0 edges';
+    const legend = document.getElementById('graph-legend');
+    if (legend) legend.innerHTML = '';
+    return;
+  }
+  const graph = buildGraph(inspirations, userLinks);
+  const communityMap = detectCommunities(graph);  // { nodeId: communityId }
+  const colors = colorizeCommunities(communityMap);
+  // Compute K (number of distinct communities) for the stats line
+  let k = 0;
+  for (const v of Object.values(communityMap)) if (typeof v === 'number' && v >= k) k = v + 1;
+  // Apply colors to nodes
+  for (const n of graph.nodes) {
+    const c = colors[n.id] || { color: '#5b8def' };
+    n.color = { background: c.color, border: '#1a1a1a', highlight: { background: c.color, border: '#1a1a1a' } };
+    n.group = c.group;
+    n.community = c.group;
+  }
+  // Edge styling
+  for (const e of graph.edges) {
+    e.width = Math.max(1, Math.min(6, (e.score || 0) * 5));
+    e.color = { color: e.kind === 'pinned' ? '#1a1a1a' : '#9a9a9f', highlight: '#1a1a1a' };
+  }
+  // Wipe previous instance
+  if (state.network) {
+    try { state.network.destroy(); } catch (_) {}
+    state.network = null;
+  }
+  container.innerHTML = '';
+  const nodes = new window.vis.DataSet(graph.nodes);
+  const edges = new window.vis.DataSet(graph.edges);
+  state.network = new window.vis.Network(container, { nodes, edges }, {
+    physics: { stabilization: { iterations: 200 } },
+    interaction: { hover: true, tooltipDelay: 100 },
+    nodes: { shape: 'dot', size: 16, font: { size: 12, color: '#1a1a1a' } },
+  });
+  // Subtitle + stats
+  const sub = document.getElementById('graph-subtitle');
+  if (sub) sub.textContent = `${graph.nodes.length} nodes · ${graph.edges.length} edges`;
+  const stats = document.getElementById('graph-stats');
+  if (stats) stats.textContent = `${k} communit${k === 1 ? 'y' : 'ies'}`;
+  // Legend
+  const legend = document.getElementById('graph-legend');
+  if (legend) {
+    const seen = new Set();
+    const items = [];
+    for (const n of graph.nodes) {
+      if (seen.has(n.community)) continue;
+      seen.add(n.community);
+      items.push({ c: n.community, color: (colors[n.id] || {}).color || '#5b8def' });
+    }
+    legend.innerHTML = items.map((i) => `<span class="graph-legend__item"><span class="graph-legend__dot" style="background:${i.color}"></span>community ${i.c + 1}</span>`).join('');
+  }
+  // Click handler
+  if (_graphClickListener) state.network.off('click', _graphClickListener);
+  _graphClickListener = (params) => {
+    if (!params.nodes || params.nodes.length === 0) return;
+    const id = params.nodes[0];
+    openGraphSidePanel(id);
+  };
+  state.network.on('click', _graphClickListener);
+}
+
+function openGraphSidePanel(id) {
+  const panel = document.getElementById('graph-sidepanel');
+  const textEl = document.getElementById('graph-sidepanel-text');
+  const metaEl = document.getElementById('graph-sidepanel-meta');
+  const edgesEl = document.getElementById('graph-sidepanel-edges');
+  const delBtn = document.getElementById('graph-sidepanel-delete');
+  if (!panel) return;
+  const ins = state.storage.getInspiration(id);
+  if (!ins) { panel.hidden = true; return; }
+  panel.hidden = false;
+  textEl.textContent = ins.text;
+  const tags = (ins.tags || []).map((t) => '#' + t).join(' ');
+  metaEl.textContent = `${formatDate(ins.createdAt)}${ins.source === 'voice' ? ' · 🎤 voice' : ''}${tags ? ' · ' + tags : ''}`;
+  // Connected inspirations
+  const links = state.storage.getLinks().filter((l) => l.source === id || l.target === id);
+  if (links.length === 0) {
+    edgesEl.innerHTML = '<li class="empty__body">No connections yet.</li>';
+  } else {
+    edgesEl.innerHTML = links.map((l) => {
+      const otherId = l.source === id ? l.target : l.source;
+      const other = state.storage.getInspiration(otherId);
+      const text = other ? esc((other.text || '').slice(0, 60) + ((other.text || '').length > 60 ? '…' : '')) : '(deleted)';
+      return `<li><span class="graph-sidepanel__edge-kind graph-sidepanel__edge-kind--${l.kind === 'pinned' ? 'pinned' : 'inferred'}">${l.kind === 'pinned' ? '🔗' : '·'}</span> ${text} <span class="graph-sidepanel__edge-score">${(l.score || 0).toFixed(2)}</span></li>`;
+    }).join('');
+  }
+  if (delBtn) {
+    delBtn.onclick = () => {
+      if (!window.confirm('Delete this inspiration? This cannot be undone.')) return;
+      state.storage.deleteInspiration(id);
+      panel.hidden = true;
+      toast('✅ Removed', 'success');
+      mountGraph();
+    };
+  }
+}
+
+// ============================================================
+// Page: #/timeline
+// ============================================================
+function renderTimeline() {
+  return `
+    <section class="page page--timeline">
+      <header class="page__header">
+        <h1 class="page__title">Timeline</h1>
+        <p class="page__subtitle">Chronological, grouped by ISO week</p>
+      </header>
+
+      <form id="timeline-search" class="search" role="search" autocomplete="off">
+        <span class="search__icon" aria-hidden="true">🔍</span>
+        <input
+          id="timeline-search-input"
+          class="search__input"
+          name="q"
+          type="text"
+          placeholder="Search past inspirations…"
+          aria-label="Search inspirations"
+          spellcheck="false"
+          autocapitalize="off"
+          autocorrect="off"
+        />
+        <button type="button" id="timeline-search-clear" class="search__clear" aria-label="Clear search">×</button>
+      </form>
+
+      <div id="timeline-content" class="timeline-content" aria-live="polite"></div>
+    </section>
+  `;
+}
+
+function bindTimelineEvents() {
+  const form = document.getElementById('timeline-search');
+  const input = document.getElementById('timeline-search-input');
+  const clear = document.getElementById('timeline-search-clear');
+  if (!form || !input) return;
+  const render = () => renderTimelineContent(input.value || '');
+  form.addEventListener('submit', (e) => { e.preventDefault(); render(); });
+  input.addEventListener('input', render);
+  if (clear) clear.addEventListener('click', () => { input.value = ''; render(); });
+  render();
+}
+
+function renderTimelineContent(rawQuery) {
+  const container = document.getElementById('timeline-content');
+  if (!container) return;
+  const all = state.storage.getInspirations();
+  // Use the existing bestMatch scorer for the inline search
+  let filtered = all;
+  if (String(rawQuery || '').trim()) {
+    // Re-purpose the scorer: each "idea" is shaped as { question, field, methods:[tags] }
+    const haystack = all.map((it) => ({
+      id: it.id,
+      field: (it.tags || [])[0] || '',
+      question: it.text,
+      methods: it.tags || [],
+    }));
+    const match = bestMatch(haystack, rawQuery);
+    if (match) {
+      filtered = all.filter((it) => it.id === match.idea.id);
+    } else {
+      // Soft fallback: substring on text
+      const q = String(rawQuery || '').toLowerCase();
+      filtered = all.filter((it) => String(it.text || '').toLowerCase().includes(q));
+    }
+  }
+  if (filtered.length === 0) {
+    container.innerHTML = emptyState('📭', 'Nothing here yet', 'Add a few inspirations via the capture box.', `<a class="btn btn--primary" href="#/capture">Go to capture</a>`);
+    return;
+  }
+  // Group by ISO week
+  const sorted = filtered.slice().sort((a, b) => b.createdAt - a.createdAt);
+  const groups = new Map();
+  for (const it of sorted) {
+    const wk = isoWeekLabel(new Date(it.createdAt || 0));
+    if (!groups.has(wk)) groups.set(wk, []);
+    groups.get(wk).push(it);
+  }
+  const sections = Array.from(groups.entries()).map(([wk, items]) => `
+    <section class="timeline-week">
+      <h2 class="timeline-week__title">${esc(wk)}</h2>
+      <ol class="timeline-week__list">
+        ${items.map((it) => `
+          <li class="inspiration-card" data-id="${esc(it.id)}">
+            <div class="inspiration-card__text">${esc(it.text)}</div>
+            <div class="inspiration-card__meta">
+              <span>${formatDate(it.createdAt)}</span>${it.source === 'voice' ? '<span>· 🎤</span>' : ''}
+              ${(it.tags || []).map((t) => `<span class="inspiration-card__tag">#${esc(t)}</span>`).join('')}
+            </div>
+          </li>
+        `).join('')}
+      </ol>
+    </section>
+  `).join('');
+  container.innerHTML = sections;
+}
+
+// ============================================================
+// Page: #/my
+// ============================================================
 function renderMy() {
-  const profile = state.storage.getProfile();
-  const history = state.storage.getFeedbackHistory();
-  const summary = { like: 0, dislike: 0, unrelated: 0 };
-  history.forEach((f) => { summary[f.type] = (summary[f.type] || 0) + 1; });
-
-  const settings = loadProviderSettings();
-  const providerLabel = settings.type === 'openai'
-    ? `OpenAI-compatible \u00b7 ${esc(settings.model || '?')}`
-    : 'Mock (34 built-in ideas)';
-
+  const all = state.storage.getInspirations();
+  const total = all.length;
   return `
     <section class="page page--my">
       <header class="page__header">
-        <h1 class="page__title">Profile</h1>
-        <p class="page__subtitle">Your profile and feedback history</p>
+        <h1 class="page__title">My inspirations</h1>
+        <p class="page__subtitle">${total} total</p>
       </header>
 
-      <section class="card card--profile">
-        <h2 class="card__section-title">🪪 Research Profile</h2>
-        ${profile ? `
-          <dl class="kv">
-            <dt>Field</dt><dd>${esc(profile.field)}</dd>
-            <dt>Direction</dt><dd>${esc(profile.direction)}</dd>
-            <dt>Career stage</dt><dd>${esc(profile.age)}</dd>
-          </dl>
-        ` : `
-          <p class="empty__body">Not set up yet</p>
-        `}
-        <a class="btn btn--primary" href="#/profile">${profile ? 'Edit profile' : 'Set up now'}</a>
-      </section>
+      <div class="my-export">
+        <button type="button" class="btn btn--primary" data-export="json">Download JSON</button>
+        <button type="button" class="btn btn--ghost" data-export="md">Download Markdown</button>
+        <button type="button" class="btn btn--ghost" data-export="html">Download HTML</button>
+        <button type="button" class="btn btn--ghost" data-export="graphml">Download GraphML</button>
+      </div>
 
-      <section class="card card--history">
-        <h2 class="card__section-title">📊 Feedback Stats</h2>
-        <dl class="kv">
-          <dt>❤️ Like</dt><dd>${summary.like || 0}</dd>
-          <dt>👎 Dislike</dt><dd>${summary.dislike || 0}</dd>
-          <dt>🚫 Unrelated</dt><dd>${summary.unrelated || 0}</dd>
-          <dt>Total</dt><dd>${history.length}</dd>
-        </dl>
-      </section>
-
-      <section class="card card--provider">
-        <h2 class="card__section-title">🤖 Current LLM</h2>
-        <p class="empty__body">${providerLabel}</p>
-        <a class="btn btn--ghost" href="#/settings">Go to settings</a>
-      </section>
-
-      <section class="card card--saved-list">
-        <h2 class="card__section-title">🗂️ Saved Ideas</h2>
-        <p class="empty__body">${state.storage.getSavedIdeas().length} total · <a class="link" href="#/saved">View</a></p>
-      </section>
-
-      ${renderMyIdeasSection()}
-
-      ${bottomNav('my')}
+      <div id="my-list" class="my-list">
+        ${total === 0
+          ? emptyState('📭', 'No inspirations yet', 'Capture a few in the capture box first.', `<a class="btn btn--primary" href="#/capture">Go to capture</a>`)
+          : `<ol class="my-list__items">${all.map((it) => `
+            <li class="inspiration-card" data-id="${esc(it.id)}">
+              <div class="inspiration-card__text">${esc(it.text)}</div>
+              <div class="inspiration-card__meta">
+                <span>${formatDate(it.createdAt)}</span>${it.source === 'voice' ? '<span>· 🎤</span>' : ''}
+                ${(it.tags || []).map((t) => `<span class="inspiration-card__tag">#${esc(t)}</span>`).join('')}
+              </div>
+              <div class="inspiration-card__actions">
+                <button type="button" class="btn btn--ghost" data-delete="${esc(it.id)}">Delete</button>
+              </div>
+            </li>
+          `).join('')}</ol>`
+        }
+      </div>
     </section>
   `;
 }
 
-// ---------- Render: Add Your Own Idea (#/new) ----------
-// Voice input helper for the new-idea form. Each textarea has its
-// own 🎤 button; tapping it starts a single-shot voice recognition
-// in zh-CN, and the live transcript (final or interim) replaces the
-// textarea value. Errors surface as toasts.
-function _buildNewIdeaVoiceButton(targetName, dots, form) {
-  return `
-    <button type="button" class="form__mic form-page__mic" data-voice-target="${esc(targetName)}" aria-label="Voice input for ${esc(targetName)}">
-      <span aria-hidden="true">🎤</span>
-    </button>
-    <span class="voice-dots" data-voice-dots="${esc(targetName)}" hidden aria-hidden="true">
-      <span class="voice-dots__dot"></span>
-      <span class="voice-dots__dot"></span>
-      <span class="voice-dots__dot"></span>
-      <span class="voice-dots__dot"></span>
-      <span class="voice-dots__dot"></span>
-    </span>
-  `;
-}
-
-function renderNewIdeaForm() {
-  const profile = state.storage.getProfile();
-  const fieldOptions = [
-    'Physics', 'Chemistry', 'Biology', 'Computer Science', 'Mathematics',
-    'Materials Science', 'Earth Science', 'Psychology', 'Economics', 'Other',
-  ];
-  // Pre-fill the field from the user's profile; default to "Other"
-  // when no profile is set yet.
-  const prefilledField = (profile && profile.field) || '';
-  const opts = (arr, sel) => arr.map((x) =>
-    `<option value="${esc(x)}" ${x === sel ? 'selected' : ''}>${esc(x)}</option>`
-  ).join('');
-
-  const voiceSupported = state.voice.isSupported();
-
-  return `
-    <section class="page page--new">
-      <header class="page__header">
-        <h1 class="page__title">Add Your Own Idea</h1>
-        <p class="page__subtitle">Add to the local pool — searchable, randomizable, and reviewed just like mock ideas.</p>
-      </header>
-
-      <form id="new-idea-form" class="form form-page" novalidate>
-        <label class="form__field form-page__field">
-          <span class="form__label form-page__field-label">Field</span>
-          <select class="form__input" name="field" required>
-            <option value="" disabled ${prefilledField ? '' : 'selected'}>Select a field</option>
-            ${opts(fieldOptions, prefilledField)}
-          </select>
-        </label>
-
-        <div class="form__field form-page__field">
-          <span class="form__label form-page__field-label form-page__field-label--required">Question</span>
-          <div class="form-page__voice-row">
-            <textarea
-              class="form__input form-page__textarea"
-              name="question"
-              rows="2"
-              placeholder="e.g. Can we use topological edge states to encode fault-tolerant qubits?"
-              required
-            ></textarea>
-            ${voiceSupported ? _buildNewIdeaVoiceButton('question', null, null) : ''}
-          </div>
-        </div>
-
-        <div class="form__field form-page__field">
-          <span class="form__label form-page__field-label">Background</span>
-          <div class="form-page__voice-row">
-            <textarea
-              class="form__input form-page__textarea"
-              name="background"
-              rows="3"
-              placeholder="Current state of the field, the knowledge gap your idea addresses…"
-            ></textarea>
-            ${voiceSupported ? _buildNewIdeaVoiceButton('background', null, null) : ''}
-          </div>
-        </div>
-
-        <div class="form__field form-page__field">
-          <span class="form__label form-page__field-label">Why it matters</span>
-          <div class="form-page__voice-row">
-            <textarea
-              class="form__input form-page__textarea"
-              name="significance"
-              rows="3"
-              placeholder="What becomes possible if this question is answered?"
-            ></textarea>
-            ${voiceSupported ? _buildNewIdeaVoiceButton('significance', null, null) : ''}
-          </div>
-        </div>
-
-        <div class="form__field form-page__field">
-          <span class="form__label form-page__field-label">Methods <span class="form-page__field-hint">(one per line)</span></span>
-          <div class="form-page__voice-row">
-            <textarea
-              class="form__input form-page__textarea"
-              name="methods"
-              rows="4"
-              placeholder="Step 1: ...&#10;Step 2: ...&#10;Step 3: ..."
-            ></textarea>
-            ${voiceSupported ? _buildNewIdeaVoiceButton('methods', null, null) : ''}
-          </div>
-        </div>
-
-        <div class="form-page__actions">
-          <a class="btn btn--ghost" href="#/explore">Cancel</a>
-          <button type="submit" id="new-idea-save" class="btn btn--primary" disabled>Save idea →</button>
-        </div>
-      </form>
-    </section>
-  `;
-}
-
-function bindNewIdeaEvents() {
-  const form = document.getElementById('new-idea-form');
-  if (!form) return;
-
-  const saveBtn = form.querySelector('#new-idea-save');
-  const questionEl = form.querySelector('[name="question"]');
-
-  // Enable the Save button only when Question is non-empty after trim.
-  const refreshSaveEnabled = () => {
-    if (!saveBtn || !questionEl) return;
-    const ok = String(questionEl.value || '').trim().length > 0;
-    saveBtn.disabled = !ok;
-  };
-  if (questionEl) questionEl.addEventListener('input', refreshSaveEnabled);
-  refreshSaveEnabled();
-
-  // Voice input: one 🎤 button per textarea. Tap to start, tap again
-  // to stop. Reuses VoiceInput (zh-CN) and the same error-toast
-  // pattern as the profile form.
-  form.querySelectorAll('[data-voice-target]').forEach((btn) => {
+function bindMyEvents() {
+  document.querySelectorAll('[data-delete]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const targetName = btn.getAttribute('data-voice-target');
-      const target = form.querySelector(`[name="${targetName}"]`);
-      if (!target) return;
-      const dots = form.querySelector(`[data-voice-dots="${targetName}"]`);
-
-      if (state.voice.isRecording() && state.voice._currentTarget === 'new-' + targetName) {
-        state.voice.stop();
-        btn.classList.remove('is-recording');
-        if (dots) dots.hidden = true;
-        state.voice._currentTarget = null;
+      const id = btn.getAttribute('data-delete');
+      if (!id) return;
+      if (!window.confirm('Delete this inspiration? This cannot be undone.')) return;
+      state.storage.deleteInspiration(id);
+      toast('✅ Removed', 'success');
+      render();
+    });
+  });
+  document.querySelectorAll('[data-export]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const kind = btn.getAttribute('data-export');
+      const payload = buildExportPayload(
+        state.storage.getInspirations(),
+        state.storage.getLinks(),
+        state.storage.getProfile()
+      );
+      let res;
+      try {
+        if (kind === 'json') res = exportJson(payload);
+        else if (kind === 'md') res = exportMarkdown(payload);
+        else if (kind === 'html') res = exportStandaloneHtml(payload);
+        else if (kind === 'graphml') res = exportGraphml(payload);
+        else { toast('⚠️ Unknown export kind', 'warn'); return; }
+      } catch (err) {
+        console.error(err);
+        toast('❌ Export failed: ' + (err && err.message), 'error');
         return;
       }
-      state.voice._currentTarget = 'new-' + targetName;
-      btn.classList.add('is-recording');
-      if (dots) dots.hidden = false;
-      state.voice.start(
-        (text, isFinal) => {
-          target.value = text;
-          if (targetName === 'question') refreshSaveEnabled();
-          if (isFinal) {
-            btn.classList.remove('is-recording');
-            if (dots) dots.hidden = true;
-            state.voice._currentTarget = null;
-          }
-        },
-        (err) => {
-          btn.classList.remove('is-recording');
-          if (dots) dots.hidden = true;
-          state.voice._currentTarget = null;
-          if (err === 'not-allowed' || err === 'service-not-allowed') {
-            toast('⚠️ Please allow microphone access (Browser Settings → Site permissions)', 'warn');
-          } else if (err === 'no-speech') {
-            toast("⚠️ Didn't hear anything, please try again", 'warn');
-          } else if (err === 'audio-capture') {
-            toast('⚠️ No microphone device found', 'error');
-          } else if (err !== 'aborted') {
-            toast('⚠️ Voice input failed: ' + err, 'error');
-          }
-        }
-      );
-    });
-  });
-
-  // Save handler: validate, call Storage.addUserIdea, sync into the
-  // provider, then navigate to the explore page so the user
-  // immediately sees their idea in the random flow.
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const fd = new FormData(form);
-    const draft = {
-      field: String(fd.get('field') || '').trim(),
-      question: String(fd.get('question') || '').trim(),
-      background: String(fd.get('background') || '').trim(),
-      significance: String(fd.get('significance') || '').trim(),
-      methods: String(fd.get('methods') || '')
-        .split('\n')
-        .map((m) => m.trim())
-        .filter(Boolean),
-    };
-    if (!draft.field) { toast('⚠️ Please choose a field', 'warn'); return; }
-    if (!draft.question) { toast('⚠️ Question is required', 'warn'); return; }
-
-    let record;
-    try {
-      // Reuse the existing MockReviewer so the user idea gets
-      // consistent 3-dim scores (same algorithm as the explore flow).
-      const reviewer = state.generator ? state.generator.reviewer : new MockReviewer();
-      record = state.storage.addUserIdea(draft, reviewer);
-    } catch (err) {
-      console.error(err);
-      toast('❌ ' + (err.message || 'Failed to save idea'), 'error');
-      return;
-    }
-
-    // Push the new list into the provider so the next pick (on
-    // #/explore) may include this idea. No generator rebuild needed.
-    syncUserIdeasIntoProvider();
-
-    toast('✅ Saved — your idea is now in the pool', 'success');
-    // Briefly defer navigation so the toast is visible.
-    setTimeout(() => { location.hash = '#/explore'; }, 50);
-  });
-}
-
-// ---------- Render: My Ideas section on #/my ----------
-// Returns the inner section HTML for the user-submitted ideas list.
-// Used inside renderMy() below the existing feedback stats.
-function renderMyIdeasSection() {
-  const list = state.storage.getUserIdeas();
-  const total = list.length;
-
-  const items = list.map((it, i) => {
-    const truncated = String(it.question || '').length > 80
-      ? String(it.question).slice(0, 80) + '…'
-      : String(it.question || '');
-    const fieldTag = it.field ? `<span class="badge badge--field">${esc(it.field)}</span>` : '';
-    return `
-      <li class="my-ideas-item" data-user-idea-id="${esc(it.id)}">
-        <div class="my-ideas-item__index">${i + 1}.</div>
-        <div class="my-ideas-item__body">
-          <div class="my-ideas-item__question">${esc(truncated)}</div>
-          <div class="my-ideas-item__meta">${fieldTag}</div>
-        </div>
-        <button type="button" class="my-ideas-item__delete" data-delete-user="${esc(it.id)}" aria-label="Delete this idea">Delete</button>
-      </li>
-    `;
-  }).join('');
-
-  const body = total === 0
-    ? `<p class="empty__body">You haven't added any ideas yet — click <strong>+ Add new</strong> to start.</p>`
-    : `<ol class="my-ideas-list">${items}</ol>`;
-
-  return `
-    <section class="card card--my-ideas">
-      <div class="card__user-ideas-header">
-        <h2 class="card__section-title">✨ My Ideas <span class="card__section-title-count">${total}</span></h2>
-        <a class="btn btn--ghost" href="#/new">+ Add new</a>
-      </div>
-      ${body}
-    </section>
-  `;
-}
-
-function bindMyIdeasEvents() {
-  document.querySelectorAll('[data-delete-user]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = btn.getAttribute('data-delete-user');
-      if (!id) return;
-      const ok = window.confirm('Delete this idea from your pool? This cannot be undone.');
-      if (!ok) return;
-      const removed = state.storage.deleteUserIdea(id);
-      if (removed) {
-        syncUserIdeasIntoProvider();
-        toast('✅ Removed', 'success');
-        render();
-      } else {
-        toast('⚠️ Could not find that idea', 'warn');
-      }
+      if (downloadBlob(res.blob, res.filename)) toast('✅ Downloaded ' + res.filename, 'success');
+      else toast('❌ Download not available in this environment', 'error');
     });
   });
 }
 
-// ---------- Render: Settings (#/settings) ----------
+// ============================================================
+// Page: #/settings
+// ============================================================
 function renderSettings() {
   const cfg = loadProviderSettings();
   const type = cfg.type || 'mock';
-  const endpoint = cfg.endpoint || 'https://api.openai.com/v1/chat/completions';
-  const apiKey = cfg.apiKey || '';
-  const model = cfg.model || 'gpt-4o-mini';
-
   return `
     <section class="page page--settings">
       <header class="page__header">
         <h1 class="page__title">Settings</h1>
-        <p class="page__subtitle">Select your LLM provider</p>
+        <p class="page__subtitle">Local-first · data stays in this browser</p>
       </header>
 
       <div class="settings__section">
         <h2 class="settings__section-title">LLM Provider</h2>
+        <p class="empty__body">v0.6 is local-first and does not call any LLM at runtime. The picker is kept for future releases.</p>
         <form id="settings-form" class="settings__group" novalidate>
           <label class="settings__option ${type === 'mock' ? 'is-selected' : ''}" data-option="mock">
             <input type="radio" name="provider" value="mock" ${type === 'mock' ? 'checked' : ''} />
             <div>
-              <span class="settings__option-label">Mock (34 built-in ideas)</span>
-              <span class="settings__option-desc">Works offline, no API key needed. Uses data/mock-ideas.json.</span>
+              <span class="settings__option-label">Mock (no-op in v0.6)</span>
+              <span class="settings__option-desc">Stub provider; no network calls, no idea generation.</span>
             </div>
           </label>
           <label class="settings__option ${type === 'openai' ? 'is-selected' : ''}" data-option="openai">
             <input type="radio" name="provider" value="openai" ${type === 'openai' ? 'checked' : ''} />
             <div>
-              <span class="settings__option-label">OpenAI-compatible (your own API)</span>
-              <span class="settings__option-desc">Supports OpenAI, DeepSeek, Moonshot, Ollama, LM Studio, and any other endpoint that speaks the /v1/chat/completions protocol.</span>
+              <span class="settings__option-label">OpenAI-compatible (future hook)</span>
+              <span class="settings__option-desc">Not used at runtime in v0.6.</span>
             </div>
           </label>
-
-          <div id="openai-fields" style="display:${type === 'openai' ? 'block' : 'none'};">
-            <label class="form__field">
-              <span class="form__label">Endpoint URL</span>
-              <input class="form__input" name="endpoint" type="url" placeholder="https://api.openai.com/v1/chat/completions" value="${esc(endpoint)}" autocomplete="off" />
-            </label>
-            <label class="form__field">
-              <span class="form__label">API Key</span>
-              <input class="form__input" name="apiKey" type="password" placeholder="sk-..." value="${esc(apiKey)}" autocomplete="off" />
-            </label>
-            <label class="form__field">
-              <span class="form__label">Model</span>
-              <input class="form__input" name="model" type="text" placeholder="gpt-4o-mini / deepseek-chat / ..." value="${esc(model)}" autocomplete="off" />
-            </label>
-            <p class="settings__hint">Your API key is stored only in this browser's localStorage and is never uploaded anywhere.</p>
-          </div>
-
           <div class="settings__row">
             <button type="submit" class="btn btn--primary">Save</button>
-            <button type="button" class="btn btn--ghost" id="test-connection">Test Connection</button>
           </div>
         </form>
       </div>
 
       <div class="settings__section">
-        <h2 class="settings__section-title">About</h2>
-        <p class="empty__body">IdeaMiner MVP \u00b7 pure-frontend \u00b7 your data stays in your browser.</p>
+        <h2 class="settings__section-title">Storage</h2>
+        <p class="empty__body">All data is in <code>localStorage</code> under <code>insightrecoder.*</code>. You can clear it from your browser's dev tools if you want a fresh start.</p>
+        <button type="button" class="btn btn--ghost" id="wipe-data">Clear all data</button>
       </div>
 
-      ${bottomNav('settings')}
+      <div class="settings__section">
+        <h2 class="settings__section-title">About</h2>
+        <p class="empty__body">InsightRecoder v0.6 · pure-frontend · local-first · no tracking.</p>
+      </div>
     </section>
   `;
 }
 
 function bindSettingsEvents() {
   const form = document.getElementById('settings-form');
-  if (!form) return;
-
-  // Show/hide OpenAI fields when switching provider
-  const openaiFields = document.getElementById('openai-fields');
-  const updateOptionStyles = () => {
-    form.querySelectorAll('.settings__option').forEach((opt) => {
-      const radio = opt.querySelector('input[type="radio"]');
-      opt.classList.toggle('is-selected', radio && radio.checked);
-    });
-    const openaiChecked = form.querySelector('input[name="provider"][value="openai"]').checked;
-    if (openaiFields) openaiFields.style.display = openaiChecked ? 'block' : 'none';
-  };
-  form.querySelectorAll('input[name="provider"]').forEach((r) => {
-    r.addEventListener('change', updateOptionStyles);
-  });
-
-  // Save
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const fd = new FormData(form);
-    const type = String(fd.get('provider') || 'mock');
-    const next = {
-      type,
-      endpoint: String(fd.get('endpoint') || '').trim(),
-      apiKey:   String(fd.get('apiKey')   || '').trim(),
-      model:    String(fd.get('model')    || '').trim(),
-    };
-    if (type === 'openai') {
-      if (!next.endpoint) { toast('⚠️ Please fill in Endpoint URL', 'warn'); return; }
-      if (!next.apiKey)   { toast('⚠️ Please fill in API Key', 'warn'); return; }
-      if (!next.model)    { toast('⚠️ Please fill in Model', 'warn'); return; }
-    }
-    saveProviderSettings(next);
-    toast('✅ Saved', 'success');
-    // Rebuild the generator (llm was swapped)
-    await rebuildProvider(next);
-  });
-
-  // Test Connection
-  const testBtn = document.getElementById('test-connection');
-  if (testBtn) {
-    testBtn.addEventListener('click', async () => {
+  if (form) {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
       const fd = new FormData(form);
       const type = String(fd.get('provider') || 'mock');
-      const cfg = {
-        type,
-        endpoint: String(fd.get('endpoint') || '').trim(),
-        apiKey:   String(fd.get('apiKey')   || '').trim(),
-        model:    String(fd.get('model')    || '').trim(),
-      };
-      if (type === 'openai') {
-        if (!cfg.endpoint || !cfg.apiKey || !cfg.model) {
-          toast('⚠️ Please fill in the full OpenAI config first', 'warn');
-          return;
-        }
-      }
-      testBtn.disabled = true;
-      const originalLabel = testBtn.textContent;
-      testBtn.textContent = 'Testing\u2026';
-      const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), 35000);
+      saveProviderSettings({ type });
+      toast('✅ Saved', 'success');
+    });
+    form.querySelectorAll('input[name="provider"]').forEach((r) => {
+      r.addEventListener('change', () => {
+        form.querySelectorAll('.settings__option').forEach((opt) => {
+          const radio = opt.querySelector('input[type="radio"]');
+          opt.classList.toggle('is-selected', radio && radio.checked);
+        });
+      });
+    });
+  }
+  const wipe = document.getElementById('wipe-data');
+  if (wipe) {
+    wipe.addEventListener('click', () => {
+      if (!window.confirm('This will delete ALL inspirations, links, and profile. Continue?')) return;
       try {
-        const profile = state.storage.getProfile() || { field: 'Physics', direction: 'quantum geometry', age: 'PhD' };
-        const provider = await createProvider(cfg);
-        const draft = await provider.generateIdea(profile, ac.signal);
-        clearTimeout(timer);
-        toast(`✅ Connection successful：${esc(draft.question.slice(0, 18))}…`, 'success');
-      } catch (err) {
-        clearTimeout(timer);
-        const msg = (err && err.message) || String(err);
-        if (err && (err.name === 'AbortError' || /aborted/i.test(msg))) {
-          toast('⚠️ Test timed out and was cancelled', 'warn');
-        } else {
-          toast('❌ Connection failed：' + esc(msg.slice(0, 80)), 'error');
+        // Only v0.6 keys. Any pre-v0.6 legacy key is already migrated
+        // on first boot by Storage.migrateLegacyUserIdeas(), so we
+        // don't need to (and shouldn't) reach for it here.
+        for (const k of Object.keys(window.localStorage)) {
+          if (k.startsWith('insightrecoder.')) {
+            window.localStorage.removeItem(k);
+          }
         }
-      } finally {
-        testBtn.disabled = false;
-        testBtn.textContent = originalLabel;
-      }
+      } catch (_) { /* ignore */ }
+      toast('✅ Cleared', 'success');
+      location.hash = '#/capture';
     });
   }
 }
 
-// ---------- Rebuild provider (Settings save / boot) ----------
-async function rebuildProvider(cfg) {
+function loadProviderSettings() {
   try {
-    const provider = await createProvider(cfg);
-    state.llm = provider;
-    state.generator = new IdeaGenerator(state.llm, undefined, state.storage);
-    // Push any persisted user ideas into the new provider so the
-    // random flow and search path both see them.
-    syncUserIdeasIntoProvider();
-  } catch (err) {
-    console.error('rebuildProvider failed:', err);
-    toast('❌ ' + (err.message || 'provider initialization failed'), 'error');
-  }
+    const raw = window.localStorage.getItem(PROVIDER_STORAGE_KEY);
+    if (!raw) return { type: 'mock' };
+    const parsed = JSON.parse(raw);
+    if (parsed && (parsed.type === 'mock' || parsed.type === 'openai')) {
+      return { type: parsed.type };
+    }
+  } catch (_) { /* fall through */ }
+  return { type: 'mock' };
+}
+function saveProviderSettings(cfg) {
+  try { window.localStorage.setItem(PROVIDER_STORAGE_KEY, JSON.stringify(cfg)); } catch (_) {}
 }
 
-/**
- * Copy the current user-ideas list from Storage into the active
- * LLM provider (if it supports the setUserIdeas API). Called on
- * boot, after a provider swap in Settings, and after a successful
- * addUserIdea / deleteUserIdea so the pool stays in sync without
- * a full rebuild.
- */
-function syncUserIdeasIntoProvider() {
-  if (!state.llm) return;
-  if (typeof state.llm.setUserIdeas !== 'function') return;
-  try {
-    state.llm.setUserIdeas(state.storage.getUserIdeas());
-  } catch (err) {
-    console.warn('syncUserIdeasIntoProvider failed:', err);
-  }
+// ============================================================
+// Util: format helpers
+// ============================================================
+function formatDate(ms) {
+  const d = new Date(Number(ms) || 0);
+  if (isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${day} ${hh}:${mm}`;
 }
 
-// ---------- Application initialization ----------
-async function init() {
-  const cfg = loadProviderSettings();
-  await rebuildProvider(cfg);
-  state.ready = true;
+function isoWeekLabel(date) {
+  if (!(date instanceof Date) || isNaN(date.getTime())) return 'unknown-week';
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 }
 
-// ---------- Router ----------
+// ============================================================
+// Router
+// ============================================================
 function render() {
-  // Cancel any in-flight request
-  if (state.currentAbort) {
-    try { state.currentAbort.abort(); } catch (_) {}
-    state.currentAbort = null;
-  }
-  state.voice.stop();
+  // Stop any in-flight voice
+  try { state.voice.stop(); } catch (_) {}
 
-  const hash = (location.hash || '#/profile').replace(/^#/, '');
-  const route = hash || '/profile';
-
+  const hash = (location.hash || '#/capture').replace(/^#/, '');
+  const route = hash || '/capture';
   const app = document.getElementById('app');
 
   if (route === '/profile' || route === '/' || route === '') {
     app.innerHTML = renderProfile();
     bindProfileEvents();
-  } else if (route === '/explore') {
-    const profile = state.storage.getProfile();
-    if (!profile) {
-      app.innerHTML = renderExploreEmpty({ field: '?', direction: '?', age: '?' });
-    } else {
-      // Delegate to fetchNext: it handles the !state.ready case (awaits init)
-      // and otherwise renders the skeleton -> idea -> feedback events flow.
-      fetchNext();
-    }
-  } else if (route === '/saved') {
-    app.innerHTML = renderSaved();
-    bindSavedEvents();
-  } else if (route === '/new') {
-    app.innerHTML = renderNewIdeaForm();
-    bindNewIdeaEvents();
+  } else if (route === '/capture') {
+    app.innerHTML = renderCapture();
+    bindCaptureEvents();
+  } else if (route === '/graph') {
+    app.innerHTML = renderGraph();
+    bindGraphEvents();
+  } else if (route === '/timeline') {
+    app.innerHTML = renderTimeline();
+    bindTimelineEvents();
   } else if (route === '/my') {
     app.innerHTML = renderMy();
-    bindMyIdeasEvents();
+    bindMyEvents();
   } else if (route === '/settings') {
     app.innerHTML = renderSettings();
     bindSettingsEvents();
   } else {
-    app.innerHTML = renderProfile();
-    bindProfileEvents();
+    app.innerHTML = renderCapture();
+    bindCaptureEvents();
   }
 }
 
-// ---------- Boot ----------
+// ============================================================
+// Boot
+// ============================================================
+async function init() {
+  // One-shot migration from v0.5.x storage
+  try {
+    const r = state.storage.migrateLegacyUserIdeas();
+    if (r && r.migrated > 0) {
+      // Defer toast until after first render
+      setTimeout(() => toast(`✅ Migrated ${r.migrated} idea${r.migrated === 1 ? '' : 's'} from IdeaMiner`, 'success'), 100);
+    }
+  } catch (err) {
+    console.warn('migrateLegacyUserIdeas failed:', err);
+  }
+  state.ready = true;
+}
+
 window.addEventListener('hashchange', render);
 window.addEventListener('DOMContentLoaded', () => {
-  // Boot init (async provider construction)
   init();
-
-  // If the user has no profile and no hash, send them to the profile page
-  if (!state.storage.getProfile() && !(location.hash && location.hash.length > 1)) {
-    location.hash = '#/profile';
-  } else if (!location.hash || location.hash === '#' || location.hash === '#/') {
-    location.hash = '#/profile';
+  if (!location.hash || location.hash === '#' || location.hash === '#/') {
+    location.hash = '#/capture';
   }
   render();
 });

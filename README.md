@@ -1,48 +1,49 @@
-# IdeaMiner · Research Idea Exploration MVP
+# InsightRecoder · Inspiration Graph
 
-> Reproduce IdeaMiner with text and voice input added.
+> *A local-first fragmented-inspiration recorder with automatic short- and
+> long-range connection detection, in-browser graph view, and standalone
+> export.*
 
-> *An open-source playground that turns your research profile into a steady stream of
-> questions worth chasing.*
+InsightRecoder is a small tool for capturing the things that pop into
+your head — a half-sentence, a phrase, a question — and seeing how
+they connect. Every save surfaces **3 algorithmic suggestions** of
+similar past inspirations. The **graph view** clusters them by an
+in-browser Louvain community detection, so the structure of your
+thinking emerges visually.
 
-IdeaMiner is an idea-discovery tool for researchers: in the loop of
-**Refine Profile → Explore Ideas → 3-Dimension Review → Interactive Feedback**,
-it surfaces research questions worth pursuing from the perspective of your own
-discipline.
-
-This is a **pure-frontend, no-build** MVP — every line of code runs in the
-browser. `MockLLMProvider` randomly picks from `data/mock-ideas.json`
-(34 hand-written ideas across 7 fields) with a 400-800ms simulated delay;
-`LocalStorageProvider` persists your profile, favorites, and feedback; every
-module is exposed through a JSDoc-typed contract so a real backend can be
-dropped in with zero refactoring.
+This is a **pure-frontend, no-build** app — every line of code runs
+in the browser. All data stays in your `localStorage`. The only
+network call is the vis-network CDN load.
 
 ---
 
 ## ✨ Features
 
-- 🔄 **4-step workflow** — Refine Profile → Explore Ideas → 3D Review → Feedback
-- 🎤 **Voice input (zh-CN)** + text input, with pulse animation and error toasts
-- 🔍 **Text + voice search** — type or speak a query, the app finds the
-  best-matching idea from the 34 hand-written entries (weighted keyword
-  scoring, see "How search works" below)
-- 📊 **3-dimension review** — Innovation / Feasibility / Importance, scored 0-100 per idea
-- 👍 **Like / 👎 Dislike / 🚫 Unrelated** feedback buttons, next idea adapts to your preferences
-- ✏️ **Add your own idea** — type or dictate your own research question
-  (field, question, background, why-it-matters, methods), get a 3-dim
-  review, and add it to the local pool. Your ideas participate in the
-  random explore and search flows, get a "✨ Your idea" badge on the
-  card, and show up in the "My Ideas" list on the Profile page.
-- ⭐ **Save to favorites**, view profile & feedback stats
-- 🧩 **Pluggable LLM provider** — Mock today, OpenAI-compatible tomorrow
-  (`js/openai-llm-provider.js`, one-click switch in the ⚙️ Settings page)
-- 🚀 **One-click deploy** — GitHub Pages workflow out of the box
+- 🎤 **Capture box** — type or dictate a single sentence. The box is
+  always visible at the top of `#/capture`, with `⌘/Ctrl + Enter` to
+  save and 🎤 voice input (zh-CN).
+- 🔗 **Auto-suggested links** — every save surfaces the top-3 most
+  similar past inspirations (TF-IDF cosine similarity). Pin a
+  suggestion with one tap; pinned links persist across sessions.
+- 🕸️ **Graph view** — every inspiration is a node, edges connect
+  similar pairs. Nodes are colored by Louvain community detection
+  (computed in the browser; ~3 KB algorithm). Click a node to see
+  its full text and connected inspirations.
+- 📅 **Timeline view** — chronological list grouped by ISO week
+  (`2026-W23`), with inline search using the v0.4.0 keyword scorer.
+- 📚 **My view** — all inspirations with delete + 4 export buttons:
+  - **JSON** — full data dump
+  - **Markdown** — weekly timeline
+  - **Standalone HTML** — single inlined file with vis-network + data
+  - **GraphML** — importable into Gephi / yEd
+- 🔒 **Local-first** — no LLM calls at runtime, no tracking, no
+  account. Your data lives in your browser's `localStorage`.
 
 ---
 
 ## 🎬 Live Demo
 
-> **https://darrenwongkawa.github.io/ideaminer-mvp/**
+> **https://darrenwongkawa.github.io/insightrecoder/**
 
 The app is automatically redeployed on every push to `main` via
 `.github/workflows/deploy.yml`.
@@ -54,17 +55,18 @@ The app is automatically redeployed on every push to `main` via
 No dependencies. Spin up a local static server:
 
 ```bash
-git clone https://github.com/DarrenWongKaWa/ideaminer-mvp.git
-cd ideaminer-mvp
+git clone https://github.com/DarrenWongKaWa/insightrecoder.git
+cd insightrecoder
 python3 -m http.server 8080
 # then open http://localhost:8080 in your browser
 ```
 
 > You can also open `index.html` directly, but **voice input** and
-> **fetch mock JSON** require http(s) in some browsers.
+> **CDN scripts** may require `http(s)` in some browsers.
 
-On first visit you are sent to the profile form; fill in the 3 fields and click
-**Continue** to enter the explore page.
+On first visit you are sent to the capture page. The research
+profile (`#/profile`) is optional — it lets you tag inspirations
+with your field and direction.
 
 ---
 
@@ -74,246 +76,107 @@ On first visit you are sent to the profile form; fill in the 3 fields and click
 ┌────────────────────────────────────────────────┐
 │  Browser (HTML/CSS/JS SPA)                      │
 │  ┌──────────┐   ┌──────────────────┐          │
-│  │ app.js   │──>│ IdeaGenerator    │          │
-│  │ (router) │   └──────┬───────────┘          │
-│  └──────────┘          │                       │
-│              ┌─────────┼──────────┐            │
-│              ▼         ▼          ▼            │
-│     LLMProvider  Reviewer    Storage          │
-│     (Mock / OAI) (hash-based) (localStorage)  │
+│  │ app.js   │──>│ insight-          │          │
+│  │ (router) │   │ connections.js    │          │
+│  │          │   │ (TF-IDF + Louvain)│          │
+│  │          │   └──────────────────┘          │
+│  │          │                                  │
+│  │          │   ┌────────────┐   ┌──────────┐ │
+│  │          │──>│ storage.js │   │ voice.js │ │
+│  │          │   │ (LocalStorage)│  │ (WebSpeech)│
+│  │          │   └────────────┘   └──────────┘ │
+│  │          │   ┌────────────┐   ┌──────────┐ │
+│  │          │──>│ export.js  │   │ idea-    │ │
+│  │          │   │ (JSON/MD/  │   │ search.js│ │
+│  │          │   │  HTML/GML) │   │ (scorer) │ │
+│  └──────────┘   └────────────┘   └──────────┘ │
+│                                                 │
+│  Only network call: vis-network CDN             │
 └────────────────────────────────────────────────┘
 ```
 
-Module-to-file mapping:
-
-| File | Role | Replace with |
-| --- | --- | --- |
-| `js/llm-provider.js` | `LLMProvider` interface + `MockLLMProvider` + `createProvider()` factory | Real OpenAI / Claude / domestic LLMs |
-| `js/openai-llm-provider.js` | `OpenAILLMProvider` — OpenAI-compatible implementation | Any other compatible service (DeepSeek / Qwen / Moonshot) |
-| `js/storage.js` | `Storage` interface + `LocalStorageProvider` (with in-memory mirror) | IndexedDB / Supabase / your own API |
-| `js/reviewer.js` | `Reviewer` interface + `MockReviewer` (FNV-1a hash) | LLM-as-judge / rule-based scoring |
-| `js/idea-generator.js` | Orchestrator: chains LLM + Reviewer + Storage preferences; `nextWithQuery()` for search | Add ranking / A/B logic |
-| `js/idea-search.js` | Tokenize + weighted keyword scoring over the mock-ideas dataset (v0.4.0) | Vector / semantic search backend |
-| `js/voice.js` | Web Speech API wrapper (zh-CN, feature-detected) | Third-party voice SDK (iFlytek / Aliyun) |
-| `js/app.js` | Hash router + page rendering | Any frontend framework (React / Vue) |
-
-`AbortController` is propagated from the router into `LLMProvider.generateIdea`
-on route changes, preventing in-flight request leaks.
+| Module                      | Role                                        |
+|----------------------------|---------------------------------------------|
+| `app.js`                   | Hash router, 6 pages (`#/profile, #/capture, #/graph, #/timeline, #/my, #/settings`) |
+| `insight-connections.js`   | TF-IDF cosine, `suggestLinks`, `buildGraph`, in-browser Louvain `detectCommunities` |
+| `storage.js`               | `LocalStorageProvider` (insync, in-memory mirror for node tests) |
+| `voice.js`                 | Web Speech API wrapper (zh-CN, interim results) |
+| `idea-search.js`           | TF-IDF-style keyword scorer (re-used by timeline search) |
+| `export.js`                | `exportJson / exportMarkdown / exportStandaloneHtml / exportGraphml` |
+| `llm-provider.js`          | Abstract `LLMProvider` + no-op `MockLLMProvider` (kept for compile compat; not used at runtime) |
+| `reviewer.js`              | No-op `MockReviewer` (kept for compile compat) |
 
 ---
 
-## 🔍 How search works
-
-The Explore Ideas page has a search row above the idea card. Type a
-free-form query (e.g. "topological superconductor", "CRISPR resistance",
-"quantum metric nonlinear") and press **Enter** or **Search**, or tap
-the 🎤 button to speak. The query is run through a small keyword
-scoring algorithm in `js/idea-search.js`:
-
-- The input is lowercased, split on non-word characters, and tokens
-  with length < 2 are dropped. Common English stop-words (`the`, `of`,
-  `in`, `and`, `no`, ...) are filtered out so queries made entirely of
-  stop-words return the empty state instead of a false positive.
-- For each remaining token, an idea gets
-  - **+3** if the token appears as a **word-boundary match** in `question`,
-  - **+2** if it appears in `background` or `significance`,
-  - **+1** if it appears in any of `methods[i]`,
-  - **+1** (bonus) if it appears in `field`.
-- The idea with the highest total score wins. A score of 0 means
-  "no match" and the UI shows a "No idea matched '<query>'" empty
-  state with a **Surprise me** button that re-runs the random flow.
-- The matched idea carries a small "🔍 Matched: <query>" badge above
-  the question, so the user can always tell at a glance whether the
-  displayed card was a search hit or a random pick.
-
-The scorer is intentionally simple — word-boundary keyword matching with
-a stop-word filter, no stemming,
-no semantic similarity. It is good enough for the 34 hand-written
-ideas in `data/mock-ideas.json`; a real production deployment would
-swap `js/idea-search.js` for a vector / semantic search backend, and
-the rest of the app would not need to change. The real LLM path
-(`OpenAILLMProvider`) does not currently implement a local search
-index; in that mode, search falls back to the empty state with a
-clear "no match" message until a future version wires the query into
-the LLM prompt.
-
----
-
-## ✏️ Adding your own ideas
-
-You are not limited to the 34 hand-written ideas. The new `#/new`
-page lets you submit your own research questions and feed them into
-the same pool the explore / search flows draw from.
-
-1. From the **Explore Ideas** page, tap **+ Add your own idea**
-   (just below the search row) or open `#/new` directly.
-2. Pick a **Field** (pre-filled from your profile), type or dictate
-   a **Question** (the only required field), and optionally fill
-   **Background**, **Why it matters**, and **Methods** (one step per
-   line). Each textarea has a 🎤 button — same `zh-CN` voice
-   recognizer the rest of the app uses.
-3. Tap **Save idea →**. The idea is run through `MockReviewer` for
-   3-dim Innovation / Feasibility / Importance scores, persisted to
-   `localStorage` under `ideaminer.user-ideas.v1`, and the page
-   navigates you back to `#/explore` so you immediately see your
-   idea in the random flow with a "✨ Your idea" badge.
-4. From the **Profile** page (`#/my`), the **My Ideas** section
-   lists everything you have added, with a **Delete** button per
-   entry (with confirm dialog) and a **+ Add new** button at the
-   top-right.
-
-What is shared with the existing flow:
-
-- ✅ Your idea can be **Liked / Disliked / Unrelated** (feedback is
-  recorded under the same `feedback` key, so the 👍-based preferred-
-  field logic in `IdeaGenerator._preferredField` still works).
-- ✅ Your idea can be **Saved** to favorites and shows up in
-  `#/saved` like any other entry.
-- ✅ Your idea participates in **search** — the keyword scorer in
-  `js/idea-search.js` runs over the merged pool, so a query that
-  hits your own background / methods / field works.
-- ✅ Your idea is included in the **random** flow; the merged pool
-  puts user ideas first, so freshly added ideas surface early.
-
-What is **not** shared (yet):
-
-- ❌ The real LLM provider (`OpenAILLMProvider`) does not yet merge
-  user ideas into the search / random pool; that's a v0.6 follow-up.
-  In mock mode (the default), everything works.
-- ❌ No export / import — user ideas live in your browser's
-  `localStorage` only. Clearing site data loses them.
-
-The plumbing is in `js/storage.js` (`addUserIdea` / `getUserIdeas` /
-`deleteUserIdea` / `getMergedIdeas`) and `js/llm-provider.js`
-(`MockLLMProvider.setUserIdeas` / `getUserIdeas`). The
-`IdeaGenerator.next` and `nextWithQuery` paths are unchanged on
-the surface — they keep their signatures — but the `MockLLMProvider`
-now picks from a merged pool and `getLastPick()` lets the generator
-preserve the user-idea id (and `_user: true` flag) so the badge,
-the feedback dedupe, and the "My Ideas" list all stay consistent.
-
----
-
-## 🧪 How to use a real LLM
-
-The simplest way: open the **⚙️ Settings** page, switch the provider to
-`OpenAI`, paste your API key, and save — no code changes, no restart.
-
-If you prefer editing source, the top of `js/app.js`:
+## 💾 Data model
 
 ```js
-import { MockLLMProvider } from './llm-provider.js';
-//  ↓ change to ↓
-import { OpenAILLMProvider } from './openai-llm-provider.js';
-```
+// Inspiration
+{
+  id: 'insp-<timestamp36>-<rand>',
+  text: 'string',                     // REQUIRED, single field
+  createdAt: <epoch ms>,
+  tags: ['tag1', 'tag2'],             // optional, lowercase, deduped
+  source: 'text' | 'voice',
+}
 
-The new class just has to implement the same interface (see the JSDoc at the
-top of `js/llm-provider.js`):
-
-```js
-// js/openai-llm-provider.js (excerpt)
-export class OpenAILLMProvider extends LLMProvider {
-  constructor(apiKey) {
-    super();
-    this.apiKey = apiKey;
-  }
-
-  async generateIdea(profile, signal) {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      signal,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: 'You are a research idea assistant.' },
-          { role: 'user', content: JSON.stringify(profile) },
-        ],
-        response_format: { type: 'json_object' },
-      }),
-    });
-    const j = await res.json();
-    return j;  // returned fields must match the IdeaDraft shape
-  }
+// Link
+{
+  source: '<inspirationId>',
+  target: '<inspirationId>',
+  score: 0.42,                         // TF-IDF cosine, 0..1
+  kind: 'inferred' | 'pinned',         // 'inferred' = algorithm, 'pinned' = user-clicked
+  createdAt: <epoch ms>,
 }
 ```
 
-`Storage` and `Reviewer` are swapped the same way — keep the interface
-signatures and the `IdeaGenerator` orchestrator needs no internal changes.
+localStorage keys:
+
+- `insightrecoder.inspirations.v1` — array, newest first
+- `insightrecoder.links.v1` — array of links
+- `insightrecoder.profile.v1` — `{field, direction, age}`
+- `insightrecoder.provider.v1` — provider picker (kept; not used at runtime)
+
+### Migration from v0.5.x IdeaMiner
+
+On first boot, if `ideaminer.user-ideas.v1` exists in localStorage
+and the new key does not, v0.6 will:
+
+1. Read the legacy entries.
+2. Transform each `{id, question, field, ...}` into
+   `{id, text: question, tags: [field?], source: 'text'}`.
+3. Write to `insightrecoder.inspirations.v1`.
+4. Delete the legacy key.
+
+The migration is one-shot and never overwrites an existing new key.
+If the new key already exists, the legacy key is deleted silently.
 
 ---
 
-## 🛣️ Roadmap
+## 🧪 Development
 
-Ordered by value / implementation cost:
+```bash
+# Sanity check
+node --check js/app.js
+node --check js/storage.js
+node --check js/insight-connections.js
+node --check js/export.js
 
-1. ✅ **Real LLM provider** — OpenAI-compatible, shipped in v0.2.0
-   (`js/openai-llm-provider.js`, switchable from ⚙️ Settings)
-2. **Backend API storage** — Supabase / PocketBase / your own Go/Python service;
-   interface signatures stay the same
-3. **Feedback-aware learning** — `IdeaGenerator._preferredField()` is currently a
-   stub; next step is to join feedback history with idea metadata for
-   lightweight collaborative filtering
-4. **Retrieval-augmented idea recall** — instead of being limited to 34 mock
-   ideas, pull candidates from arXiv / OpenAlex and have the LLM remix them
-   with citations
-5. **Research community version** — share feedback across users (with dedup and
-   privacy), rank ideas by the average expert-reader score
-6. **Multimodal input** — screenshot a paper / photo of an equation / voice
-   recording → run a multimodal LLM to extract the research direction, then
-   enter the idea loop
+# Run the module-level smoke test (no DOM)
+node verify-v06.js
+```
 
 ---
 
-## 🚢 Deployment
+## 🗺️ Roadmap
 
-**GitHub Pages (recommended)**:
-
-1. Push the repo to GitHub.
-2. Open repo Settings → Pages → Source: **GitHub Actions**.
-3. Every push to `main` triggers `.github/workflows/deploy.yml` and
-   auto-deploys. The URL appears in the Actions run summary, e.g.
-   `https://<org>.github.io/ideaminer-mvp/`
-
-The `.nojekyll` file tells GitHub Pages to skip Jekyll processing
-(repositories may contain `_`-prefixed metadata directories that Jekyll would
-otherwise treat as special).
-
-**Other static hosts**:
-
-The repo is pure static, deployable to any static server:
-
-- **Vercel / Netlify / Cloudflare Pages**: connect the GitHub repo, leave the
-  build command empty, set the output directory to `.`, auto-deploy.
-- **Your own Nginx**: `rsync -av --delete ./ user@host:/var/www/ideaminer/`.
+- v0.6 — current: capture, connections, graph, export (local-first)
+- v0.7 — multi-device sync (a self-hosted backend, opt-in)
+- v0.8 — semantic embeddings (model loaded from CDN) for richer
+  short-range vs long-range distinction
 
 ---
 
-## 📝 Changelog
+## License
 
-See [CHANGELOG.md](./CHANGELOG.md). Current version: **v0.5.0** (Add your own idea).
-
----
-
-## ⚠️ Known Limitations
-
-- For real production deployment, `localStorage` should be replaced with
-  backend KV / user accounts, so data is not lost when the user clears site
-  data.
-- Web Speech API is **not supported** in Firefox; the 🎤 button is auto-hidden
-  when the API is missing.
-- `MockLLMProvider` uses "same-field preference + random" to pick ideas, so
-  long sessions can feel repetitive. Switching to a real LLM removes this.
-- No full accessibility (a11y) audit; tested on Chrome / Safari on M4 Air;
-  Edge / Firefox only verified for theoretical compatibility.
-- Voice input language is `zh-CN`. Other languages require changing the
-  `recognition.lang` value in `js/voice.js`.
-
----
-
-## 📄 License
-
-MIT — see [LICENSE](./LICENSE).
+MIT. See [LICENSE](LICENSE).
