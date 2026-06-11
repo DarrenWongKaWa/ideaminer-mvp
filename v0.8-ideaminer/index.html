@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>IdeaMiner v0.8 · Researcher-Specific Inspiration Engine</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <noscript>
+    <p>IdeaMiner needs JavaScript to run. Please enable JavaScript in your browser.</p>
+  </noscript>
+
+  <header class="topbar">
+    <h1 class="topbar__title">🧪 IdeaMiner <span class="topbar__ver">v0.8</span></h1>
+    <p class="topbar__sub">From vague intuition to complete research plan.</p>
+  </header>
+
+  <main id="app" class="page">
+    <!-- 4-step flow will render into here. Default landing = Step 1. -->
+    <section class="step" data-step="1">
+      <h2 class="step__title">Step 1 — Choose your field</h2>
+      <p class="step__hint">Pick a primary discipline. The system will filter all generated ideas to be relevant to your sub-area.</p>
+
+      <label class="field">
+        <span class="field__label">Primary field</span>
+        <select id="primary" class="field__input">
+          <option value="">— select —</option>
+          <option value="physics">Physics</option>
+          <option value="biology">Biology</option>
+          <option value="cs">Computer Science</option>
+        </select>
+      </label>
+
+      <label class="field" id="subWrap" hidden>
+        <span class="field__label">Sub-discipline</span>
+        <select id="sub" class="field__input">
+          <option value="">— select —</option>
+        </select>
+      </label>
+
+      <div class="actions">
+        <button class="btn btn--primary" id="toStep2" disabled>Next: Generate ideas</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Local-first · No data leaves your browser · 4-step idea engine</p>
+  </footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
