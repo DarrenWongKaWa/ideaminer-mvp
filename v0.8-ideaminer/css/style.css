@@ -368,3 +368,31 @@ body {
     --brand-bg: #1e3a8a;
   }
 }
+
+/* v0.9 additions: graph view + export dropdown */
+.graph-stats {
+  margin: var(--pad) 0;
+  padding: 10px 14px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--fg-mute);
+  font-variant-numeric: tabular-nums;
+}
+.graph-container {
+  width: 100%;
+  height: 60vh;
+  min-height: 380px;
+  max-height: 720px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: var(--pad);
+}
+.graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: var(--pad);
+}

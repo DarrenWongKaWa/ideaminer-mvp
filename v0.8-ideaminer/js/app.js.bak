@@ -395,7 +395,7 @@ export class IdeaMinerApp {
     const sec = document.createElement('section');
     sec.className = 'step';
     const saved = this.storage.getAllIdeas().filter((x) => x.saved);
-    const { inspirations, graph, communities } = this._buildGraphData(saved);
+    const { nodes, edges, communities } = this._buildGraphData(saved);
 
     sec.innerHTML = `
       <h2 class="step__title">Step 5 — Connection graph</h2>
@@ -417,9 +417,7 @@ export class IdeaMinerApp {
       sec.querySelector('#graphContainer').innerHTML = `<p class="empty">No saved ideas yet. Save some in the Library tab to see the graph.</p>`;
       sec.querySelector('#graphStats').textContent = '0 nodes · 0 edges · 0 communities';
     } else {
-      // Defer _mountGraph to next tick so #graphContainer / #graphStats are
-      // queryable from the live DOM (this sec is appended to root in render()).
-      requestAnimationFrame(() => this._mountGraph(inspirations, graph, communities));
+      this._mountGraph(nodes, edges, communities);
     }
 
     sec.querySelector('#rebuild').addEventListener('click', () => this.render());
@@ -453,11 +451,7 @@ export class IdeaMinerApp {
 
   _mountGraph(inspirations, graph, communities) {
     const container = document.getElementById('graphContainer');
-    if (!container) {
-      // Re-render was triggered before this animation frame; bail.
-      return;
-    }
-    if (typeof window.vis === 'undefined') {
+    if (!container || typeof window.vis === 'undefined') {
       container.innerHTML = `<p class="empty">vis-network not loaded — check network connection (CDN: unpkg.com/vis-network).</p>`;
       return;
     }
