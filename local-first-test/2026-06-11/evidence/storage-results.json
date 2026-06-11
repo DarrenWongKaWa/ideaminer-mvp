@@ -1,0 +1,70 @@
+[
+  {
+    "name": "corrupt_JSON_inspirations",
+    "crashed": false,
+    "err": null,
+    "saveOk": true,
+    "saveErr": null,
+    "recoveredCount": 1,
+    "recoveredText": "After corrupt"
+  },
+  {
+    "name": "quota_exceeded_save",
+    "crashed": false,
+    "err": null,
+    "addReturnedInspiration": true,
+    "memInspCount": 1,
+    "localStorageInsp": null
+  },
+  {
+    "name": "first_run",
+    "crashed": false,
+    "err": null,
+    "listLen": 0,
+    "linksLen": 0,
+    "profileNull": true,
+    "addedId": "insp-mq8tzb3e-gkkapt"
+  },
+  {
+    "name": "migration_idempotency",
+    "firstCall": {
+      "migrated": 0,
+      "hadOldKey": true
+    },
+    "legacyAfterRemoved": true,
+    "newKeyUnchanged": true,
+    "secondCall": {
+      "migrated": 0,
+      "hadOldKey": false
+    }
+  },
+  {
+    "name": "migration_real",
+    "res": {
+      "migrated": 2,
+      "hadOldKey": true
+    },
+    "legacyRemoved": true,
+    "ids": [
+      "insp-aaa",
+      "insp-bbb"
+    ],
+    "tags": [
+      [
+        "physics"
+      ],
+      [
+        "chemistry"
+      ]
+    ]
+  },
+  {
+    "name": "migration_wrapped_shape",
+    "res": {
+      "migrated": 1,
+      "hadOldKey": true
+    },
+    "legacyRemoved": true,
+    "listLen": 1
+  }
+]

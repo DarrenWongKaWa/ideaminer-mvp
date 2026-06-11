@@ -168,7 +168,7 @@ function renderProfile() {
         </label>
 
         <button type="submit" class="btn btn--primary">Save</button>
-        <a class="btn btn--ghost" href="#/capture">Skip →</a>
+        <a class="link" href="#/capture">Skip for now</a>
       </form>
     </section>
   `;
@@ -320,7 +320,16 @@ function bindCaptureEvents() {
     const profile = state.storage.getProfile();
     const tags = [];
     if (profile && profile.field) tags.push(String(profile.field).toLowerCase());
-    const record = state.storage.addInspiration({ text, tags, source });
+    let record;
+    try {
+      record = state.storage.addInspiration({ text, tags, source });
+    } catch (err) {
+      if (err && err.name === 'StorageFullError') {
+        toast('💾 Storage full — clear some data in Settings', 'error');
+        return;
+      }
+      throw err;
+    }
     toast('✅ Saved', 'success');
     textarea.value = '';
     refreshSaveEnabled();
@@ -449,12 +458,31 @@ function mountGraph() {
   // Compute K (number of distinct communities) for the stats line
   let k = 0;
   for (const v of Object.values(communityMap)) if (typeof v === 'number' && v >= k) k = v + 1;
-  // Apply colors to nodes
+  // Apply colors to nodes. Singletons (communities with only one
+  // member) get a neutral gray + a sentinel `community` of -1 so the
+  // legend loop can skip them — singletons carry no grouping signal,
+  // so coloring them all the same keeps the palette meaningful for
+  // the communities that actually have multiple members.
+  const communityMembers = new Map();
   for (const n of graph.nodes) {
-    const c = colors[n.id] || { color: '#5b8def' };
-    n.color = { background: c.color, border: '#1a1a1a', highlight: { background: c.color, border: '#1a1a1a' } };
-    n.group = c.group;
-    n.community = c.group;
+    const c = communityMap[n.id];
+    if (c == null) continue;
+    if (!communityMembers.has(c)) communityMembers.set(c, []);
+    communityMembers.get(c).push(n);
+  }
+  for (const n of graph.nodes) {
+    const cId = communityMap[n.id];
+    const size = (communityMembers.get(cId) || []).length;
+    const isSingleton = size < 2;
+    if (isSingleton) {
+      n.color = { background: '#9a9a9f', border: '#1a1a1a', highlight: { background: '#9a9a9f', border: '#1a1a1a' } };
+      n.community = -1;
+    } else {
+      const c = colors[n.id] || { color: '#5b8def' };
+      n.color = { background: c.color, border: '#1a1a1a', highlight: { background: c.color, border: '#1a1a1a' } };
+      n.community = cId;
+    }
+    n.title = n.label || '';  // hover tooltip
   }
   // Edge styling
   for (const e of graph.edges) {
@@ -479,17 +507,33 @@ function mountGraph() {
   if (sub) sub.textContent = `${graph.nodes.length} nodes · ${graph.edges.length} edges`;
   const stats = document.getElementById('graph-stats');
   if (stats) stats.textContent = `${k} communit${k === 1 ? 'y' : 'ies'}`;
-  // Legend
+  // Legend — only communities of size >= 2 (singletons are gray +
+  // uninformative, so we suppress them). For each multi-member
+  // community, label with its most-common tag so the user has a
+  // semantic handle ("#physics" beats "community 2").
   const legend = document.getElementById('graph-legend');
   if (legend) {
-    const seen = new Set();
     const items = [];
-    for (const n of graph.nodes) {
-      if (seen.has(n.community)) continue;
-      seen.add(n.community);
-      items.push({ c: n.community, color: (colors[n.id] || {}).color || '#5b8def' });
+    for (const [cId, members] of communityMembers.entries()) {
+      if (members.length < 2) continue;
+      const tagCounts = new Map();
+      for (const n of members) {
+        for (const t of (n.tags || [])) {
+          tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+        }
+      }
+      let topTag = null;
+      let topCount = 0;
+      for (const [t, c] of tagCounts.entries()) {
+        if (c > topCount) { topCount = c; topTag = t; }
+      }
+      const firstColor = (colors[members[0].id] || {}).color || '#5b8def';
+      items.push({ cId, color: firstColor, topTag });
     }
-    legend.innerHTML = items.map((i) => `<span class="graph-legend__item"><span class="graph-legend__dot" style="background:${i.color}"></span>community ${i.c + 1}</span>`).join('');
+    legend.innerHTML = items.map((i) => {
+      const tagSuffix = i.topTag ? ` <span class="graph-legend__tag">#${esc(i.topTag)}</span>` : '';
+      return `<span class="graph-legend__item"><span class="graph-legend__dot" style="background:${i.color}"></span>community ${i.cId + 1}${tagSuffix}</span>`;
+    }).join('');
   }
   // Click handler
   if (_graphClickListener) state.network.off('click', _graphClickListener);
@@ -753,7 +797,7 @@ function renderSettings() {
       <div class="settings__section">
         <h2 class="settings__section-title">Storage</h2>
         <p class="empty__body">All data is in <code>localStorage</code> under <code>insightrecoder.*</code>. You can clear it from your browser's dev tools if you want a fresh start.</p>
-        <button type="button" class="btn btn--ghost" id="wipe-data">Clear all data</button>
+        <button type="button" class="btn btn--danger" id="wipe-data">🗑️ Clear all data</button>
       </div>
 
       <div class="settings__section">
@@ -853,25 +897,25 @@ function render() {
   const app = document.getElementById('app');
 
   if (route === '/profile' || route === '/' || route === '') {
-    app.innerHTML = renderProfile();
+    app.innerHTML = renderProfile() + bottomNav('profile');
     bindProfileEvents();
   } else if (route === '/capture') {
-    app.innerHTML = renderCapture();
+    app.innerHTML = renderCapture() + bottomNav('capture');
     bindCaptureEvents();
   } else if (route === '/graph') {
-    app.innerHTML = renderGraph();
+    app.innerHTML = renderGraph() + bottomNav('graph');
     bindGraphEvents();
   } else if (route === '/timeline') {
-    app.innerHTML = renderTimeline();
+    app.innerHTML = renderTimeline() + bottomNav('timeline');
     bindTimelineEvents();
   } else if (route === '/my') {
-    app.innerHTML = renderMy();
+    app.innerHTML = renderMy() + bottomNav('my');
     bindMyEvents();
   } else if (route === '/settings') {
-    app.innerHTML = renderSettings();
+    app.innerHTML = renderSettings() + bottomNav('settings');
     bindSettingsEvents();
   } else {
-    app.innerHTML = renderCapture();
+    app.innerHTML = renderCapture() + bottomNav('capture');
     bindCaptureEvents();
   }
 }

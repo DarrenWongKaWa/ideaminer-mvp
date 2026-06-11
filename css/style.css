@@ -1,11 +1,12 @@
 /* ==================================================================
- * IdeaMiner MVP — single stylesheet, mobile-first
+ * InsightRecoder v0.6 — design tokens, components, motion, a11y.
  *
  * Design tone:
  *   - Clean white background + dark text + card-based layout
- *   - max-width: 480px, centered (mobile-first)
- *   - Fixed bottom nav (4 icons: Explore / Saved / Profile / Settings)
- *   - Feedback buttons use pill-shaped rounding
+ *   - max-width: 480px, centered (mobile-first), expands to 1080px
+ *     on the graph view at >= 900px viewports
+ *   - Fixed bottom nav (5 items: Capture / Graph / Timeline / My / Settings)
+ *   - Capture box uses glassy backdrop-filter with explicit fallback
  *
  * Spacing system: 4 / 8 / 16 / 24 / 32 px (see --sp-1..--sp-5)
  * Motion curve: 200ms cubic-bezier(0.4, 0, 0.2, 1)
@@ -148,7 +149,8 @@ input, select, button {
   animation: pageFadeIn var(--dur) var(--ease) both;
 }
 
-.page--saved, .page--explore, .page--my, .page--settings {
+.page--saved, .page--explore, .page--my, .page--settings,
+.page--capture, .page--graph, .page--timeline, .page--profile {
   padding-bottom: calc(var(--nav-h) + var(--sp-4));
 }
 
@@ -952,6 +954,20 @@ select.form__input {
   }
 }
 
+/* On wider viewports, the graph view specifically needs more room
+   than the 480px column — otherwise the force-directed layout
+   squishes nodes into a tiny box. Cap it to a 1080px card so the
+   graph stays readable without losing the centered "card" feel. */
+@media (min-width: 900px) {
+  .page--graph {
+    max-width: 1080px;
+  }
+  .page--graph .graph-container {
+    height: 70vh;
+    min-height: 520px;
+  }
+}
+
 /* ------------------------------------------------------------------
  * 16) Search row (Explore Ideas)
  * ------------------------------------------------------------------ */
@@ -1493,6 +1509,10 @@ select.form__input {
 }
 .capture-box__hint {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
   color: var(--fg-faint);
   text-align: right;

@@ -1,0 +1,128 @@
+{
+  "json": {
+    "filename": "insightrecoder-20260611.json",
+    "mime": "application/json",
+    "size": 1463,
+    "roundtripEqual": true,
+    "inspirationCount": 4,
+    "linkCount": 3,
+    "profileField": "Physics"
+  },
+  "md": {
+    "filename": "insightrecoder-20260611.md",
+    "mime": "text/markdown",
+    "size": 498,
+    "hasH1": true,
+    "hasMetadata": true,
+    "hasWeeklySections": 1,
+    "hasBullet": true,
+    "hasTagRender": true
+  },
+  "html": {
+    "filename": "insightrecoder-20260611.html",
+    "mime": "text/html",
+    "size": 5325,
+    "hasInlineData": true,
+    "hasInspirationData": true,
+    "hasLinkData": true,
+    "externalScripts": [
+      "<script src=\"https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js\""
+    ],
+    "externalLinks": [],
+    "externalImages": [],
+    "hasInlineOnlyData": true,
+    "hasVisCdn": true,
+    "hasNetwork": true,
+    "hasCommunityLogic": true
+  },
+  "gml": {
+    "filename": "insightrecoder-20260611.graphml",
+    "mime": "application/graphml+xml",
+    "size": 2379,
+    "hasXmlDecl": true,
+    "hasGraphmlRoot": true,
+    "hasGraphElement": true,
+    "hasKeyDecls": true,
+    "nodeCount": 4,
+    "edgeCount": 3,
+    "nodeIds": [
+      "insp-1",
+      "insp-2",
+      "insp-3",
+      "insp-4"
+    ],
+    "edgeKinds": [
+      "inferred",
+      "inferred",
+      "pinned"
+    ],
+    "edgeScores": [
+      "0.5",
+      "0.3",
+      "0.1"
+    ],
+    "networkxParse": {
+      "wellFormed": true,
+      "balanced": true
+    }
+  },
+  "filenameSafety": {
+    "filenames": {
+      "json": "insightrecoder-20260611.json",
+      "md": "insightrecoder-20260611.md",
+      "html": "insightrecoder-20260611.html",
+      "gml": "insightrecoder-20260611.graphml"
+    },
+    "allSafe": true
+  },
+  "inspirations": [
+    {
+      "id": "insp-1",
+      "text": "Quantum geometry in twisted bilayer graphene",
+      "tags": [
+        "physics"
+      ]
+    },
+    {
+      "id": "insp-2",
+      "text": "Berry curvature drives nonlinear Hall response",
+      "tags": [
+        "physics"
+      ]
+    },
+    {
+      "id": "insp-3",
+      "text": "Topological magnetoelectric effect in axion insulators",
+      "tags": [
+        "physics"
+      ]
+    },
+    {
+      "id": "insp-4",
+      "text": "Machine learning for tight-binding Hamiltonians",
+      "tags": [
+        "ml"
+      ]
+    }
+  ],
+  "links": [
+    {
+      "source": "insp-1",
+      "target": "insp-2",
+      "kind": "inferred",
+      "score": 0.5
+    },
+    {
+      "source": "insp-2",
+      "target": "insp-3",
+      "kind": "inferred",
+      "score": 0.3
+    },
+    {
+      "source": "insp-1",
+      "target": "insp-4",
+      "kind": "pinned",
+      "score": 0.1
+    }
+  ]
+}

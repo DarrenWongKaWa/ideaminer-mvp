@@ -110,14 +110,47 @@ export class LocalStorageProvider extends Storage {
     }
   }
 
+  /**
+   * Custom error class so the UI can distinguish "storage full" from
+   * other failures (which are silently absorbed for resilience). When
+   * quota is exceeded, the public method rolls back its in-memory
+   * mirror and re-throws; the UI catches this and shows a friendly
+   * "Storage full — clear some data in Settings" toast. This prevents
+   * silent data loss where the UI says "Saved" but the next page
+   * reload finds nothing.
+   */
+  static StorageFullError = class StorageFullError extends Error {
+    constructor(message = 'localStorage quota exceeded') {
+      super(message);
+      this.name = 'StorageFullError';
+    }
+  };
+
   _write(key, val) {
-    const memKey = this._memKey(key);
-    if (memKey) this._mem[memKey] = val;
-    if (!this._hasLS) return;
+    if (!this._hasLS) {
+      // Node smoke-test path: keep the mirror consistent.
+      const memKey = this._memKey(key);
+      if (memKey) this._mem[memKey] = val;
+      return;
+    }
     try {
       window.localStorage.setItem(key, JSON.stringify(val));
-    } catch (_) {
-      // Silently degrade on quota-exceeded etc.
+      // Mirror only after the write succeeds, so a quota error
+      // never leaves the in-memory state ahead of persisted state.
+      const memKey = this._memKey(key);
+      if (memKey) this._mem[memKey] = val;
+    } catch (err) {
+      if (err && (err.name === 'QuotaExceededError'
+          || err.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+          || (typeof DOMException !== 'undefined' && err instanceof DOMException
+              && err.code === DOMException.QUOTA_EXCEEDED_ERR))) {
+        throw new LocalStorageProvider.StorageFullError(
+          `localStorage quota exceeded while writing ${key}`
+        );
+      }
+      // Other failures (security, disabled storage) — degrade silently
+      // to keep the app responsive. The next page reload will start
+      // fresh from localStorage and the user will see what persisted.
     }
   }
 
@@ -162,9 +195,20 @@ export class LocalStorageProvider extends Storage {
       tags,
       source,
     };
-    const list = this.getInspirations();
-    list.unshift(record);
-    this._write(KEYS.inspirations, list);
+    // Copy the list before mutating so a failed _write can roll back
+    // without leaving the in-memory state modified. The in-memory
+    // mirror is what getInspirations() returns; we only want to
+    // mirror to it after a successful write.
+    const current = this.getInspirations();
+    const list = [record, ...current];
+    try {
+      this._write(KEYS.inspirations, list);
+    } catch (err) {
+      if (err && err.name === 'StorageFullError') {
+        throw err;
+      }
+      throw err;
+    }
     return record;
   }
 
@@ -184,16 +228,28 @@ export class LocalStorageProvider extends Storage {
    * @param {string} id
    * @returns {boolean} true if removed, false if not found
    */
-  deleteInspiration(id) {
+    deleteInspiration(id) {
     if (!id) return false;
     const list = this.getInspirations();
     const next = list.filter((x) => x.id !== id);
     if (next.length === list.length) return false;
-    this._write(KEYS.inspirations, next);
-    // Cascade-delete links touching this id
+    // Snapshot the in-memory list + links so we can roll back on quota.
+    const prevList = list.slice();
     const links = this.getLinks();
     const nextLinks = links.filter((l) => l.source !== id && l.target !== id);
-    if (nextLinks.length !== links.length) this._write(KEYS.links, nextLinks);
+    try {
+      this._write(KEYS.inspirations, next);
+      if (nextLinks.length !== links.length) this._write(KEYS.links, nextLinks);
+    } catch (err) {
+      if (err && err.name === 'StorageFullError') {
+        // Restore the original in-memory list; the in-memory mirror
+        // is already untouched (since _write now only mirrors on
+        // success), but be explicit for readers tracing this code.
+        this._mem.inspirations = prevList;
+        throw err;
+      }
+      throw err;
+    }
     return true;
   }
 
@@ -251,7 +307,17 @@ export class LocalStorageProvider extends Storage {
         createdAt: Date.now(),
       });
     }
-    this._write(KEYS.links, list);
+    try {
+      this._write(KEYS.links, list);
+    } catch (err) {
+      if (err && err.name === 'StorageFullError') {
+        // Roll back the in-memory link list.
+        const original = this._read(KEYS.links, []);
+        this._mem.links = Array.isArray(original) ? original : [];
+        throw err;
+      }
+      throw err;
+    }
   }
 
   /**
@@ -265,7 +331,16 @@ export class LocalStorageProvider extends Storage {
     const next = list.filter((l) => !(l.source === source && l.target === target)
       && !(l.source === target && l.target === source));
     if (next.length === list.length) return false;
-    this._write(KEYS.links, next);
+    try {
+      this._write(KEYS.links, next);
+    } catch (err) {
+      if (err && err.name === 'StorageFullError') {
+        const original = this._read(KEYS.links, []);
+        this._mem.links = Array.isArray(original) ? original : [];
+        throw err;
+      }
+      throw err;
+    }
     return true;
   }
 

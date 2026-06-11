@@ -1,0 +1,11 @@
+Nodes: 4
+Edges: 3
+Node data:
+  - id=insp-1, text=Quantum geometry in twisted bilayer graphene, tags=physics, source=text
+  - id=insp-2, text=Berry curvature drives nonlinear Hall response, tags=physics, source=voice
+  - id=insp-3, text=Topological magnetoelectric effect in axion insula, tags=physics, source=text
+  - id=insp-4, text=Machine learning for tight-binding Hamiltonians, tags=ml, source=text
+Edge data:
+  - insp-1 -- insp-2, kind=inferred, score=0.5
+  - insp-2 -- insp-3, kind=inferred, score=0.3
+  - insp-1 -- insp-4, kind=pinned, score=0.1

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">
+  <key id="text" for="node" attr.name="text" attr.type="string"/>
+  <key id="tags" for="node" attr.name="tags" attr.type="string"/>
+  <key id="createdAt" for="node" attr.name="createdAt" attr.type="long"/>
+  <key id="source" for="node" attr.name="source" attr.type="string"/>
+  <key id="score" for="edge" attr.name="score" attr.type="double"/>
+  <key id="kind" for="edge" attr.name="kind" attr.type="string"/>
+  <key id="createdAt" for="edge" attr.name="createdAt" attr.type="long"/>
+  <graph id="insightrecoder" edgedefault="undirected">
+    <node id="insp-1">
+      <data key="text">Quantum geometry in twisted bilayer graphene</data>
+      <data key="tags">physics</data>
+      <data key="createdAt">1780000000000</data>
+      <data key="source">text</data>
+    </node>
+    <node id="insp-2">
+      <data key="text">Berry curvature drives nonlinear Hall response</data>
+      <data key="tags">physics</data>
+      <data key="createdAt">1780000010000</data>
+      <data key="source">voice</data>
+    </node>
+    <node id="insp-3">
+      <data key="text">Topological magnetoelectric effect in axion insulators</data>
+      <data key="tags">physics</data>
+      <data key="createdAt">1780000020000</data>
+      <data key="source">text</data>
+    </node>
+    <node id="insp-4">
+      <data key="text">Machine learning for tight-binding Hamiltonians</data>
+      <data key="tags">ml</data>
+      <data key="createdAt">1780000030000</data>
+      <data key="source">text</data>
+    </node>
+    <edge id="insp-1__insp-2" source="insp-1" target="insp-2">
+      <data key="score">0.5</data>
+      <data key="kind">inferred</data>
+      <data key="createdAt">1780000010000</data>
+    </edge>
+    <edge id="insp-2__insp-3" source="insp-2" target="insp-3">
+      <data key="score">0.3</data>
+      <data key="kind">inferred</data>
+      <data key="createdAt">1780000020000</data>
+    </edge>
+    <edge id="insp-1__insp-4" source="insp-1" target="insp-4">
+      <data key="score">0.1</data>
+      <data key="kind">pinned</data>
+      <data key="createdAt">1780000030000</data>
+    </edge>
+  </graph>
+</graphml>

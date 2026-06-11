@@ -1,0 +1,71 @@
+{
+  "app": "InsightRecoder",
+  "version": "0.6.0",
+  "exportedAt": "2026-06-11T01:45:37.658Z",
+  "profile": {
+    "field": "Physics",
+    "direction": "quantum geometry",
+    "age": "PhD"
+  },
+  "inspirations": [
+    {
+      "id": "insp-1",
+      "text": "Quantum geometry in twisted bilayer graphene",
+      "createdAt": 1780000000000,
+      "tags": [
+        "physics"
+      ],
+      "source": "text"
+    },
+    {
+      "id": "insp-2",
+      "text": "Berry curvature drives nonlinear Hall response",
+      "createdAt": 1780000010000,
+      "tags": [
+        "physics"
+      ],
+      "source": "voice"
+    },
+    {
+      "id": "insp-3",
+      "text": "Topological magnetoelectric effect in axion insulators",
+      "createdAt": 1780000020000,
+      "tags": [
+        "physics"
+      ],
+      "source": "text"
+    },
+    {
+      "id": "insp-4",
+      "text": "Machine learning for tight-binding Hamiltonians",
+      "createdAt": 1780000030000,
+      "tags": [
+        "ml"
+      ],
+      "source": "text"
+    }
+  ],
+  "links": [
+    {
+      "source": "insp-1",
+      "target": "insp-2",
+      "score": 0.5,
+      "kind": "inferred",
+      "createdAt": 1780000010000
+    },
+    {
+      "source": "insp-2",
+      "target": "insp-3",
+      "score": 0.3,
+      "kind": "inferred",
+      "createdAt": 1780000020000
+    },
+    {
+      "source": "insp-1",
+      "target": "insp-4",
+      "score": 0.1,
+      "kind": "pinned",
+      "createdAt": 1780000030000
+    }
+  ]
+}
