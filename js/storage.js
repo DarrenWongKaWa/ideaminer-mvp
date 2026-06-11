@@ -49,8 +49,15 @@ const KEYS = {
   profile:       'insightrecoder.profile.v1',
   inspirations:  'insightrecoder.inspirations.v1',
   links:         'insightrecoder.links.v1',
-  // Legacy v0.5.x key — read once on boot for one-shot migration, then deleted.
+  // Legacy v0.5.x keys — read once on boot for one-shot migration,
+  // then deleted. The v0.6.0 migration only handled user-ideas, which
+  // is why users who had saved/favorite ideas (ideaminer.saved.v1) or
+  // feedback history (ideaminer.feedback.v1) saw their data
+  // "disappear" after upgrading. v0.6.2 migrates all four legacy keys.
   legacyUserIdeas: 'ideaminer.user-ideas.v1',
+  legacySaved:     'ideaminer.saved.v1',
+  legacyFeedback:  'ideaminer.feedback.v1',
+  legacyProfile:   'ideaminer.profile.v1',
 };
 
 export class Storage {
@@ -357,72 +364,153 @@ export class LocalStorageProvider extends Storage {
 
   // ---- Migration ----
   /**
-   * One-shot migration from v0.5.x storage.
-   * If `ideaminer.user-ideas.v1` exists and
-   * `insightrecoder.inspirations.v1` does not, transform and
-   * move the data, then delete the old key.
+   * One-shot migration from v0.5.x storage (all four legacy keys):
+   *   - `ideaminer.user-ideas.v1`  → `insightrecoder.inspirations.v1`
+   *       (each {id, question, field, ...} → {id, text, tags:[field], source})
+   *   - `ideaminer.saved.v1`       → `insightrecoder.saved.v1` (a NEW
+   *       key that v0.6 did not expose; we now also back up the
+   *       v0.5.x "saved" list so the user can re-link them). v0.6
+   *       removed the saved/favorite feature entirely, so the
+   *       migrated entries are kept under a fresh key for future
+   *       use (the user can hand-reconnect them once we restore the
+   *       feature).
+   *   - `ideaminer.feedback.v1`    → `insightrecoder.legacy-feedback.v1`
+   *       (like/dislike history; v0.6 dropped like/dislike, so we
+   *       keep the raw history under a clearly-marked legacy key
+   *       in case a future release wants to re-import it).
+   *   - `ideaminer.profile.v1`      → `insightrecoder.profile.v1`
+   *       (the new profile key uses a different namespace; the
+   *       v0.5.x profile is copied over if the new key is empty).
    *
-   * Mapping:
-   *   { id, question, field, ... } ->
-   *     { id, text: question, tags: [field?], source: 'text' }
+   * All four migrations are idempotent: if the new key already
+   * exists, the legacy data is left in place and the legacy key is
+   * NOT deleted (so the user can still recover via a manual
+   * download if needed). Once the new key is empty AND the legacy
+   * key has data, the migration runs and the legacy key is deleted.
    *
-   * @returns {{ migrated: number, hadOldKey: boolean }}
+   * @returns {{
+   *   inspirationsMigrated: number,
+   *   savedMigrated: number,
+   *   feedbackMigrated: number,
+   *   profileMigrated: boolean,
+   *   hadAnyLegacy: boolean,
+   * }}
    */
   migrateLegacyUserIdeas() {
-    if (!this._hasLS) {
-      // node smoke-test path: in-memory mirror does not have the
-      // legacy key (the constructor initializes it absent), so noop.
-      return { migrated: 0, hadOldKey: false };
-    }
-    let oldRaw = null;
-    try { oldRaw = window.localStorage.getItem(KEYS.legacyUserIdeas); } catch (_) { /* ignore */ }
-    if (!oldRaw) return { migrated: 0, hadOldKey: false };
+    const report = {
+      inspirationsMigrated: 0,
+      savedMigrated: 0,
+      feedbackMigrated: 0,
+      profileMigrated: false,
+      hadAnyLegacy: false,
+    };
+    if (!this._hasLS) return report;
 
-    let newRaw = null;
-    try { newRaw = window.localStorage.getItem(KEYS.inspirations); } catch (_) { /* ignore */ }
-    if (newRaw) {
-      // New key already exists; do not overwrite. Still delete the
-      // old key so we don't keep re-checking.
-      try { window.localStorage.removeItem(KEYS.legacyUserIdeas); } catch (_) { /* ignore */ }
-      return { migrated: 0, hadOldKey: true };
-    }
+    const safeGet = (k) => {
+      try { return window.localStorage.getItem(k); } catch (_) { return null; }
+    };
+    const safeRemove = (k) => {
+      try { window.localStorage.removeItem(k); } catch (_) { /* ignore */ }
+    };
+    const safeParse = (raw) => {
+      if (raw == null) return null;
+      try { return JSON.parse(raw); } catch (_) { return null; }
+    };
 
-    let oldList = [];
-    try {
-      const parsed = JSON.parse(oldRaw);
-      // v0.5.x stored either a raw array OR a {ideas: [...]} wrapper
-      // (depending on which release). Accept both shapes.
-      if (Array.isArray(parsed)) {
-        oldList = parsed;
-      } else if (parsed && Array.isArray(parsed.ideas)) {
-        oldList = parsed.ideas;
+    // 1) Profile
+    const oldProfile = safeGet(KEYS.legacyProfile);
+    if (oldProfile) {
+      report.hadAnyLegacy = true;
+      const newProfile = safeGet(KEYS.profile);
+      if (!newProfile) {
+        const p = safeParse(oldProfile);
+        if (p && typeof p === 'object' && (p.field || p.direction || p.age)) {
+          this._write(KEYS.profile, {
+            field: String(p.field || ''),
+            direction: String(p.direction || ''),
+            age: String(p.age || ''),
+          });
+          report.profileMigrated = true;
+          safeRemove(KEYS.legacyProfile);
+        } else {
+          // unparseable / empty legacy profile; just drop the key
+          safeRemove(KEYS.legacyProfile);
+        }
       }
-    } catch (_) { /* fall through */ }
-
-    const migrated = oldList
-      .filter((x) => x && typeof x === 'object' && x.question)
-      .map((x) => {
-        const field = String(x.field || '').trim().toLowerCase();
-        // Rename legacy `user-*` ids to `insp-*` to match the new
-        // naming convention used by addInspiration().
-        const oldId = String(x.id || '');
-        const newId = oldId.startsWith('user-')
-          ? 'insp-' + oldId.slice(5)
-          : (oldId || ('insp-mig-' + Math.random().toString(36).slice(2, 10)));
-        return {
-          id: newId,
-          text: String(x.question || '').trim(),
-          createdAt: Number(x.generatedAt) || Date.now(),
-          tags: field ? [field] : [],
-          source: 'text',
-        };
-      })
-      .filter((x) => x.text);
-
-    if (migrated.length > 0) {
-      this._write(KEYS.inspirations, migrated);
+      // If new profile already exists, leave legacy in place; the
+      // user can recover via download if they ever need it.
     }
-    try { window.localStorage.removeItem(KEYS.legacyUserIdeas); } catch (_) { /* ignore */ }
-    return { migrated: migrated.length, hadOldKey: true };
+
+    // 2) User-submitted ideas → inspirations
+    const oldIdeas = safeGet(KEYS.legacyUserIdeas);
+    if (oldIdeas) {
+      report.hadAnyLegacy = true;
+      const newIdeas = safeGet(KEYS.inspirations);
+      if (!newIdeas) {
+        const parsed = safeParse(oldIdeas);
+        let oldList = [];
+        if (Array.isArray(parsed)) oldList = parsed;
+        else if (parsed && Array.isArray(parsed.ideas)) oldList = parsed.ideas;
+        const migrated = oldList
+          .filter((x) => x && typeof x === 'object' && x.question)
+          .map((x) => {
+            const field = String(x.field || '').trim().toLowerCase();
+            const oldId = String(x.id || '');
+            const newId = oldId.startsWith('user-')
+              ? 'insp-' + oldId.slice(5)
+              : (oldId || ('insp-mig-' + Math.random().toString(36).slice(2, 10)));
+            return {
+              id: newId,
+              text: String(x.question || '').trim(),
+              createdAt: Number(x.generatedAt) || Date.now(),
+              tags: field ? [field] : [],
+              source: 'text',
+            };
+          })
+          .filter((x) => x.text);
+        if (migrated.length > 0) {
+          this._write(KEYS.inspirations, migrated);
+          report.inspirationsMigrated = migrated.length;
+        }
+        safeRemove(KEYS.legacyUserIdeas);
+      }
+      // If new inspirations already exist, leave legacy in place.
+    }
+
+    // 3) Saved ideas → kept under a fresh insightrecoder.saved.v1
+    //    key. v0.6 has no UI for saved ideas yet, but we preserve
+    //    the data so a future release can re-link them. The user
+    //    can also download it via the JS console: localStorage
+    //    .getItem('insightrecoder.saved.v1').
+    const oldSaved = safeGet(KEYS.legacySaved);
+    if (oldSaved) {
+      report.hadAnyLegacy = true;
+      const newSaved = safeGet('insightrecoder.saved.v1');
+      if (!newSaved) {
+        const parsed = safeParse(oldSaved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          this._write('insightrecoder.saved.v1', parsed);
+          report.savedMigrated = parsed.length;
+        }
+        safeRemove(KEYS.legacySaved);
+      }
+    }
+
+    // 4) Feedback history → insightrecoder.legacy-feedback.v1
+    const oldFeedback = safeGet(KEYS.legacyFeedback);
+    if (oldFeedback) {
+      report.hadAnyLegacy = true;
+      const newFeedback = safeGet('insightrecoder.legacy-feedback.v1');
+      if (!newFeedback) {
+        const parsed = safeParse(oldFeedback);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          this._write('insightrecoder.legacy-feedback.v1', parsed);
+          report.feedbackMigrated = parsed.length;
+        }
+        safeRemove(KEYS.legacyFeedback);
+      }
+    }
+
+    return report;
   }
 }

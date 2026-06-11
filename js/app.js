@@ -924,12 +924,28 @@ function render() {
 // Boot
 // ============================================================
 async function init() {
-  // One-shot migration from v0.5.x storage
+  // One-shot migration from v0.5.x storage. The migration now
+  // covers all four legacy keys (user-ideas, saved, feedback,
+  // profile). v0.6.0 only handled user-ideas, which is why users
+  // who had saved / favorite ideas saw their data "disappear"
+  // after upgrading — the legacy keys were not migrated and the
+  // new app had no surface to display them. v0.6.2 migrates
+  // everything; if a user already upgraded to v0.6.0 and their
+  // legacy data is still in localStorage (which it is, until
+  // they clear site data), the migration will run on the next
+  // boot of v0.6.2 and bring back saved + profile data.
   try {
     const r = state.storage.migrateLegacyUserIdeas();
-    if (r && r.migrated > 0) {
-      // Defer toast until after first render
-      setTimeout(() => toast(`✅ Migrated ${r.migrated} idea${r.migrated === 1 ? '' : 's'} from IdeaMiner`, 'success'), 100);
+    if (r && r.hadAnyLegacy) {
+      const parts = [];
+      if (r.inspirationsMigrated > 0) parts.push(`${r.inspirationsMigrated} idea${r.inspirationsMigrated === 1 ? '' : 's'}`);
+      if (r.savedMigrated > 0) parts.push(`${r.savedMigrated} saved`);
+      if (r.feedbackMigrated > 0) parts.push(`${r.feedbackMigrated} feedback`);
+      if (r.profileMigrated) parts.push('profile');
+      if (parts.length > 0) {
+        // Defer toast until after first render
+        setTimeout(() => toast(`✅ Migrated from IdeaMiner: ${parts.join(', ')}`, 'success'), 100);
+      }
     }
   } catch (err) {
     console.warn('migrateLegacyUserIdeas failed:', err);
