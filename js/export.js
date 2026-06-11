@@ -1,7 +1,7 @@
 /**
  * export.js
  * ------------------------------------------------------------
- * Export utilities for the InsightRecoder v0.6 corpus.
+ * Export utilities for the InsightRecoder v0.7 corpus.
  *
  * Every export function returns a `{ blob, filename, mimeType }`
  * triple so the UI can either:
@@ -9,8 +9,17 @@
  *   - read .text() for a textarea preview.
  *
  * All four formats are pure: they take the in-memory shape
- * (inspirations + links + profile) and return a Blob. They do
- * not touch the DOM, the network, or localStorage.
+ * (inspirations + links + profile + pool) and return a Blob.
+ * They do not touch the DOM, the network, or localStorage.
+ *
+ * v0.7 change: the payload now carries `poolConfig` (the
+ * connected GitHub repo + PAT, if any), `poolCache` (the
+ * last-synced list of pool inspirations), and `poolReactions`
+ * (the local override map). The four `exportXxx` functions
+ * still consume the same payload shape but the JSON export
+ * includes the new fields. Markdown / Standalone HTML /
+ * GraphML ignore the pool fields (they remain inspiration-
+ * centric).
  * ------------------------------------------------------------
  */
 
@@ -21,6 +30,7 @@
  * @property {number} createdAt
  * @property {string[]} [tags]
  * @property {'text'|'voice'} [source]
+ * @property {Object} [_poolOrigin]   v0.7 — present if user published to GitHub
  */
 
 /**
@@ -33,26 +43,44 @@
  */
 
 /**
+ * @typedef {Object} PoolConfigExport
+ * @property {string} owner
+ * @property {string} repo
+ * @property {string|null} token    included; users should redact before sharing
+ */
+
+/**
  * @typedef {Object} ExportPayload
  * @property {Inspiration[]} inspirations
  * @property {Link[]} links
  * @property {object|null} profile
+ * @property {PoolConfigExport|null} poolConfig   v0.7
+ * @property {Array<object>} poolCache            v0.7
+ * @property {Object<string, string|null>} poolReactions  v0.7
  * @property {string} exportedAt   ISO string
  * @property {string} app          "InsightRecoder"
  * @property {string} version
  */
 
 const APP_NAME = 'InsightRecoder';
-const VERSION = '0.6.0';
+const VERSION = '0.7.0';
 
 /**
  * Build the canonical export payload. Sorted newest first.
+ *
+ * v0.7: now accepts an optional 4th argument with the pool
+ * state. The pool token is included in the export (same
+ * security model as v0.6 — localStorage is plaintext). The
+ * user is responsible for redacting the JSON before sharing.
+ *
  * @param {Inspiration[]} inspirations
  * @param {Link[]} links
  * @param {object|null} profile
+ * @param {{ poolConfig?: object|null, poolCache?: Array<object>, poolReactions?: object }} [pool]
  * @returns {ExportPayload}
  */
-export function buildExportPayload(inspirations, links, profile) {
+export function buildExportPayload(inspirations, links, profile, pool) {
+  const poolBlock = pool || {};
   return {
     app: APP_NAME,
     version: VERSION,
@@ -60,6 +88,9 @@ export function buildExportPayload(inspirations, links, profile) {
     profile: profile || null,
     inspirations: (Array.isArray(inspirations) ? inspirations : []).slice(),
     links: (Array.isArray(links) ? links : []).slice(),
+    poolConfig: poolBlock.poolConfig || null,
+    poolCache: Array.isArray(poolBlock.poolCache) ? poolBlock.poolCache.slice() : [],
+    poolReactions: (poolBlock.poolReactions && typeof poolBlock.poolReactions === 'object') ? poolBlock.poolReactions : {},
   };
 }
 

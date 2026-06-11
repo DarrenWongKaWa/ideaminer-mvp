@@ -1,8 +1,8 @@
 # InsightRecoder · Inspiration Graph
 
 > *A local-first fragmented-inspiration recorder with automatic short- and
-> long-range connection detection, in-browser graph view, and standalone
-> export.*
+> long-range connection detection, in-browser graph view, optional
+> multi-user GitHub-Issues-backed "Insight Pool", and standalone export.*
 
 InsightRecoder is a small tool for capturing the things that pop into
 your head — a half-sentence, a phrase, a question — and seeing how
@@ -13,7 +13,8 @@ thinking emerges visually.
 
 This is a **pure-frontend, no-build** app — every line of code runs
 in the browser. All data stays in your `localStorage`. The only
-network call is the vis-network CDN load.
+network calls are the vis-network CDN load and (optionally) the
+GitHub REST API for the v0.7 Insight Pool.
 
 ---
 
@@ -29,15 +30,20 @@ network call is the vis-network CDN load.
   similar pairs. Nodes are colored by Louvain community detection
   (computed in the browser; ~3 KB algorithm). Click a node to see
   its full text and connected inspirations.
+- 🌐 **Insight Pool (v0.7, opt-in)** — connect a GitHub Issues
+  repo to share inspirations with a community. Read is free for
+  public repos; publish + reactions need a fine-grained PAT with
+  `issues: write`. See "Connecting a pool" below.
 - 📅 **Timeline view** — chronological list grouped by ISO week
   (`2026-W23`), with inline search using the v0.4.0 keyword scorer.
 - 📚 **My view** — all inspirations with delete + 4 export buttons:
-  - **JSON** — full data dump
+  - **JSON** — full data dump (now includes pool config + cache)
   - **Markdown** — weekly timeline
   - **Standalone HTML** — single inlined file with vis-network + data
   - **GraphML** — importable into Gephi / yEd
 - 🔒 **Local-first** — no LLM calls at runtime, no tracking, no
   account. Your data lives in your browser's `localStorage`.
+  The pool is an *opt-in* layer on top.
 
 ---
 
@@ -79,32 +85,87 @@ with your field and direction.
 │  │ app.js   │──>│ insight-          │          │
 │  │ (router) │   │ connections.js    │          │
 │  │          │   │ (TF-IDF + Louvain)│          │
+│  │          │   │  + cross-pool)    │          │
 │  │          │   └──────────────────┘          │
 │  │          │                                  │
 │  │          │   ┌────────────┐   ┌──────────┐ │
 │  │          │──>│ storage.js │   │ voice.js │ │
-│  │          │   │ (LocalStorage)│  │ (WebSpeech)│
+│  │          │   │ (LocalStorage│  │ (WebSpeech)│
+│  │          │   │  + pool)    │   │          │ │
 │  │          │   └────────────┘   └──────────┘ │
 │  │          │   ┌────────────┐   ┌──────────┐ │
-│  │          │──>│ export.js  │   │ idea-    │ │
-│  │          │   │ (JSON/MD/  │   │ search.js│ │
-│  │          │   │  HTML/GML) │   │ (scorer) │ │
-│  └──────────┘   └────────────┘   └──────────┘ │
+│  │          │──>│ pool.js    │   │ export.js│ │
+│  │          │   │ (GitHub    │   │ (JSON/MD/│ │
+│  │          │   │  Issues    │   │  HTML/GML)│ │
+│  │          │   │  client)   │   └──────────┘ │
+│  └──────────┘   └────────────┘                │
 │                                                 │
-│  Only network call: vis-network CDN             │
+│  Network calls: vis-network CDN, api.github.com (opt-in pool) │
 └────────────────────────────────────────────────┘
 ```
 
 | Module                      | Role                                        |
 |----------------------------|---------------------------------------------|
-| `app.js`                   | Hash router, 6 pages (`#/profile, #/capture, #/graph, #/timeline, #/my, #/settings`) |
-| `insight-connections.js`   | TF-IDF cosine, `suggestLinks`, `buildGraph`, in-browser Louvain `detectCommunities` |
-| `storage.js`               | `LocalStorageProvider` (insync, in-memory mirror for node tests) |
+| `app.js`                   | Hash router, 7 pages (`#/profile, #/capture, #/graph, #/timeline, #/pool, #/my, #/settings`) + 5-item bottom nav |
+| `insight-connections.js`   | TF-IDF cosine, `suggestLinks`, `buildGraph` (with optional `poolInspirations` for cross-community edges), in-browser Louvain `detectCommunities` |
+| `storage.js`               | `LocalStorageProvider` with v0.6 surface + 6 v0.7 pool methods (config / cache / reactions / setPoolOrigin) |
+| `pool.js`                  | `GitHubIssuePool` client (fetch / publish / react / unreact) + 4 typed error classes |
 | `voice.js`                 | Web Speech API wrapper (zh-CN, interim results) |
 | `idea-search.js`           | TF-IDF-style keyword scorer (re-used by timeline search) |
-| `export.js`                | `exportJson / exportMarkdown / exportStandaloneHtml / exportGraphml` |
+| `export.js`                | `exportJson / exportMarkdown / exportStandaloneHtml / exportGraphml`; v0.7 JSON export includes pool config + cache + reactions |
 | `llm-provider.js`          | Abstract `LLMProvider` + no-op `MockLLMProvider` (kept for compile compat; not used at runtime) |
 | `reviewer.js`              | No-op `MockReviewer` (kept for compile compat) |
+
+---
+
+## 🌐 Insight Pool (v0.7, opt-in)
+
+v0.7 layers an optional **multi-user "Insight Pool"** on top of
+v0.6.2's local-first store. The pool is a GitHub Issues repo you
+pick — a public one for a quick read-only test, a private one for
+a friend group, a class repo for a teacher. Each inspiration you
+publish becomes a GitHub issue; each reaction becomes a
+`POST /reactions`.
+
+### Connecting a pool
+
+1. Go to `#/settings`. Scroll to the **Insight Pool** section.
+2. Fill in `owner / repo` (e.g. `octocat / Hello-World` for a
+   public read-only test).
+3. *(Optional)* Paste a [fine-grained PAT](https://github.com/settings/tokens?type=beta)
+   with **Issues: Read & Write** scoped to that single repo. The
+   token is stored in `localStorage` (plaintext — acceptable for
+   an MVP; v0.8 may add Web Crypto).
+4. Tap **Connect pool**. The first sync runs immediately and
+   populates the **Pool** tab.
+5. To publish an inspiration, tick the **📤 Also publish to
+   <owner>/<repo>** checkbox in `#/capture` before saving. The
+   issue number is recorded on your local copy (shown in `#/my`
+   under "Published to <repo>").
+
+### How it stays local-first
+
+- **No config → no API calls.** The `/pool` tab shows a "Connect"
+  empty state. `pool.publish` throws `PoolNotConfigured` if you
+  haven't supplied a token.
+- **The cache is local.** `js/storage.js` holds the last-synced
+  list of pool issues plus a `myReaction` override map, so
+  reactions stay snappy even when GitHub is rate-limited
+  (5000/hr authenticated, 60/hr per IP for unauth).
+- **Cross-community graph.** Pool nodes appear on `#/graph` with a
+  dashed border, connected to your local nodes by a
+  `kind: 'cross'` edge at TF-IDF cosine > 0.25. Pinned local
+  links stay `kind: 'pinned'`.
+- **Token never in URL.** Always `Authorization: token <PAT>`.
+
+### Token security
+
+The PAT is stored in `localStorage` under
+`insightrecoder.pool-config.v1`. The token is **never** written
+to a URL, a log line, or a query string. If you export a JSON
+file, the token is included in the payload — redact it before
+sharing the file. v0.8 will add optional Web Crypto encryption
+with a user-supplied passphrase.
 
 ---
 
@@ -136,6 +197,9 @@ localStorage keys:
 - `insightrecoder.links.v1` — array of links
 - `insightrecoder.profile.v1` — `{field, direction, age}`
 - `insightrecoder.provider.v1` — provider picker (kept; not used at runtime)
+- `insightrecoder.pool-config.v1` — `{owner, repo, token}` or absent
+- `insightrecoder.pool-cache.v1` — array of `PoolInspiration`
+- `insightrecoder.pool-reactions.v1` — `{issueNumber: '+1'|'-1'|null}` overrides
 
 ### Migration from v0.5.x IdeaMiner
 
@@ -170,10 +234,14 @@ node verify-v06.js
 
 ## 🗺️ Roadmap
 
-- v0.6 — current: capture, connections, graph, export (local-first)
-- v0.7 — multi-device sync (a self-hosted backend, opt-in)
+- v0.6 — capture, connections, graph, export (local-first)
+- v0.7 — current: optional GitHub-Issues-backed **Insight Pool**
+  (read public repos unauthenticated; publish + react with a
+  fine-grained PAT). Cross-community graph edges via TF-IDF
+  cosine > 0.25.
 - v0.8 — semantic embeddings (model loaded from CDN) for richer
-  short-range vs long-range distinction
+  short-range vs long-range distinction; Web Crypto token
+  encryption; comments / threaded discussion.
 
 ---
 

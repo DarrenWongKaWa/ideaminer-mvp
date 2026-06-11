@@ -208,14 +208,38 @@ export function suggestLinks(newInspiration, allInspirations, topK = 3, minScore
  * TF-IDF cosine threshold as `suggestLinks` (0.05), and mark them
  * kind='inferred'.
  *
+ * v0.7 — pool support. Pass `opts.poolInspirations` to include
+ * pool-side inspirations as second-class nodes. Cross-community
+ * edges are inferred by joining the local corpus with the pool
+ * corpus at a higher threshold (default 0.25, per the v0.7 design)
+ * so the "inferred" edges stay dense but the cross-pool bridges
+ * stay readable. User-pinned local links are kept exactly as in
+ * v0.6.2; the pool doesn't add pinned edges on its own.
+ *
+ * Pool nodes are decorated with `node.isPool = true` and
+ * `node.poolOrigin` so the UI can ring them differently from
+ * local nodes. User's own pool publications carry
+ * `node.isOwnPool = true` (i.e. local copy was published) so the
+ * UI can drop a "↗" badge.
+ *
+ * The existing 2-arg form `buildGraph(inspirations, links)` is
+ * unchanged when no `opts.poolInspirations` is supplied.
+ *
  * @param {Array<{ id: string, text: string, createdAt?: number, tags?: string[], source?: string }>} inspirations
  * @param {Array<{ source: string, target: string, score: number, kind: string }>} links
- * @param {{ inferIfEmpty?: boolean, inferThreshold?: number }} [opts]
+ * @param {{
+ *   inferIfEmpty?: boolean,
+ *   inferThreshold?: number,
+ *   poolInspirations?: Array<{ id: string, text: string, createdAt?: number, tags?: string[], origin?: object, isLocal?: boolean }>,
+ *   crossThreshold?: number,
+ * }} [opts]
  * @returns {{ nodes: Array<object>, edges: Array<object> }}
  */
 export function buildGraph(inspirations, links, opts) {
   const inferIfEmpty = !opts || opts.inferIfEmpty !== false;
   const threshold = (opts && Number(opts.inferThreshold)) || 0.05;
+  const crossThreshold = (opts && Number(opts.crossThreshold)) || 0.25;
+  const poolList = (opts && Array.isArray(opts.poolInspirations)) ? opts.poolInspirations : [];
 
   const list = Array.isArray(inspirations) ? inspirations : [];
   const userLinks = Array.isArray(links) ? links : [];
@@ -231,10 +255,24 @@ export function buildGraph(inspirations, links, opts) {
       arrows: { to: { enabled: false } },
       smooth: { enabled: true, type: 'continuous' },
     }));
-  } else if (inferIfEmpty && list.length >= 2) {
+  } else if (inferIfEmpty && (list.length + poolList.length) >= 2) {
+    // Infer on the union of local + pool when no user links are
+    // supplied. We use the local threshold (0.05) for in-corpus
+    // edges AND the cross-community threshold (0.25) for
+    // local<->pool bridges. Both kinds are marked 'inferred'.
     edges = inferEdges(list, threshold);
+    if (poolList.length > 0) {
+      edges = edges.concat(inferCrossEdges(list, poolList, crossThreshold));
+    }
   } else {
     edges = [];
+    // Even when userLinks exist, add cross-community edges so the
+    // user always sees the pool connections. The "pinned" link
+    // layer is local-only; the "inferred" cross layer is opt-in
+    // by virtue of having a non-empty pool.
+    if (poolList.length > 0) {
+      edges = edges.concat(inferCrossEdges(list, poolList, crossThreshold));
+    }
   }
 
   const nodes = list.map((it) => ({
@@ -248,7 +286,31 @@ export function buildGraph(inspirations, links, opts) {
     font: { size: 12, color: '#1a1a1a' },
     shape: 'dot',
     size: 14,
+    isPool: false,
   }));
+
+  // Append pool nodes (no internal pool<->pool edges by design —
+  // the pool repo owner can manage those; we just render the
+  // pool as a flat cloud of nodes and link it to the local
+  // graph via cross-community edges).
+  for (const it of poolList) {
+    if (!it || !it.id) continue;
+    nodes.push({
+      id: it.id,
+      label: truncateLabel(it.text || '(empty)'),
+      title: it.text || '',
+      text: it.text,
+      createdAt: it.createdAt || 0,
+      tags: Array.isArray(it.tags) ? it.tags : [],
+      source: it.source || 'pool',
+      isPool: true,
+      poolOrigin: it.origin || null,
+      isOwnPool: !!it.isLocal,
+      font: { size: 12, color: '#1a1a1a' },
+      shape: 'dot',
+      size: 14,
+    });
+  }
 
   return { nodes, edges };
 }
@@ -278,6 +340,45 @@ function inferEdges(inspirations, threshold) {
       const s = cosine(a, b);
       if (s >= threshold) {
         out.push({ from: ids[i], to: ids[j], score: s, kind: 'inferred' });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Cross-community edges between local and pool nodes. The IDF
+ * is built from the *union* of both corpora so a token that
+ * appears only in the pool side still has a meaningful weight.
+ * Pairs below `crossThreshold` are dropped — these bridges
+ * should be a sparse, high-signal overlay on top of the dense
+ * local graph, not a hairball.
+ *
+ * @param {Array<{ id: string, text: string }>} local
+ * @param {Array<{ id: string, text: string }>} pool
+ * @param {number} crossThreshold
+ * @returns {Array<{ from: string, to: string, score: number, kind: string }>}
+ */
+function inferCrossEdges(local, pool, crossThreshold) {
+  const localList = Array.isArray(local) ? local : [];
+  const poolList = Array.isArray(pool) ? pool : [];
+  if (localList.length === 0 || poolList.length === 0) return [];
+  // Build corpus from BOTH sides so IDF weights are comparable.
+  // We re-use buildCorpus directly because it accepts any
+  // id+text object.
+  const { vectors } = buildCorpus([].concat(localList, poolList));
+  const out = [];
+  for (const L of localList) {
+    if (!L || !L.id) continue;
+    const vL = vectors.get(L.id);
+    if (!vL) continue;
+    for (const P of poolList) {
+      if (!P || !P.id) continue;
+      const vP = vectors.get(P.id);
+      if (!vP) continue;
+      const s = cosine(vL, vP);
+      if (s >= crossThreshold) {
+        out.push({ from: L.id, to: P.id, score: s, kind: 'cross' });
       }
     }
   }

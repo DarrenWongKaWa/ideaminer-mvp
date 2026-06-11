@@ -1836,3 +1836,226 @@ select.form__input {
     width: 100vw;
   }
 }
+
+/* ------------------------------------------------------------------
+ * 15) v0.7 — Insight Pool (cards, tag chips, settings fields,
+ *     cross-community legend dots, capture-pool toggle).
+ *
+ * v0.7 layers an optional multi-user "Insight Pool" on top of
+ * the v0.6.2 local-first store. The pool is a GitHub Issues
+ * repo configured by the user. The styles here cover:
+ *   - The /pool page list + card (`.pool-card`, `.pool-reaction`)
+ *   - The /capture "Push to pool" toggle
+ *   - The /my "Local only" vs "Published to <repo>" split
+ *   - The graph legend "pool" and "cross" entries
+ *   - The settings "Insight Pool" sub-section
+ * The 5th bottom-nav item (Pool) reuses `.bottom-nav__item`
+ * unchanged — the `flex: 1` layout auto-distributes 5 items
+ * across the 360px viewport.
+ * ------------------------------------------------------------------ */
+
+.pool-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  margin-bottom: var(--gap);
+  flex-wrap: wrap;
+}
+.pool-toolbar__hint {
+  font-size: 12px;
+  color: var(--fg-faint);
+}
+
+.pool-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+.pool-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pool-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  flex-wrap: wrap;
+}
+.pool-card__author {
+  font-weight: 500;
+  color: var(--fg);
+}
+.pool-card__date {
+  color: var(--fg-faint);
+}
+.pool-card__open {
+  margin-left: auto;
+  color: var(--brand);
+  text-decoration: none;
+  font-size: 12px;
+}
+.pool-card__text {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--fg);
+  word-break: break-word;
+}
+.pool-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.pool-card__tag {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--fg-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+}
+.pool-card__reactions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.pool-reaction {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--fg);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.pool-reaction:hover {
+  background: var(--bg-elevated);
+}
+.pool-reaction.is-active {
+  background: var(--brand-bg, #e7f0ff);
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.pool-reaction__count {
+  font-size: 12px;
+  font-weight: 500;
+}
+.pool-card__save {
+  margin-left: auto;
+}
+
+/* Capture: "Also publish to <repo>" toggle. Sits inside the
+ * capture box, right under the Save row. */
+.capture-box__pool-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.capture-box__pool-toggle input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+/* My view: split into "Local only" / "Published to <repo>". */
+.my-section__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 16px 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.my-section__count {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+.inspiration-card__pool {
+  font-size: 12px;
+  color: var(--brand);
+  font-weight: 500;
+}
+
+/* Settings: "Insight Pool" sub-section fields + tag chip. */
+.settings__section-tag {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--fg-faint);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 1px 8px;
+  margin-left: 6px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  vertical-align: middle;
+}
+.settings__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.settings__field .form__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+.settings__field .form__hint {
+  font-weight: 400;
+  color: var(--fg-faint);
+  font-size: 11px;
+}
+
+/* Graph legend: pool nodes + cross-community edges. */
+.graph-legend__dot--pool {
+  background: transparent !important;
+  border: 2px dashed var(--fg, #1a1a1a) !important;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.graph-legend__dot--cross {
+  background: var(--brand, #5b8def) !important;
+  width: 16px;
+  height: 2px;
+  border-radius: 1px;
+  display: inline-block;
+  background-image: linear-gradient(to right, var(--brand, #5b8def) 50%, transparent 50%);
+  background-size: 6px 100%;
+  background-repeat: repeat-x;
+  background-color: transparent !important;
+}
+.graph-sidepanel__edge-kind--cross {
+  color: var(--brand, #5b8def);
+  font-weight: 600;
+}

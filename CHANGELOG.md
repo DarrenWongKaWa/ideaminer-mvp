@@ -1,9 +1,89 @@
 # Changelog
-
 All notable changes to InsightRecoder (formerly IdeaMiner MVP).
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
+
+## [0.7.0] - 2026-06-11
+
+> **Insight Pool** — an optional, opt-in multi-user layer on
+> top of the v0.6.2 local-first store. v0.6.2's migration logic
+> and storage surface are unchanged. Pool is a user-configured
+> GitHub Issues repo: read is unauthenticated for public repos;
+> publish + reactions need a fine-grained PAT with
+> `issues: write`. No server of our own; the only network
+> calls are to `api.github.com`.
+
+### Added
+- **`js/pool.js`** — `GitHubIssuePool` class plus 4 typed
+  error classes (`PoolAuthError`, `PoolRateLimit`,
+  `PoolNotConfigured`, `PoolNetworkError`). Methods:
+  `fetchAll` (with the squirrel-girl reactions preview header
+  so the issues call returns reaction counts in one round
+  trip; pull-requests filtered out), `publish` (issue create
+  with title = text slice, labels = tags slice 0..5, body =
+  full text + attribution footer), `react` / `unreact`
+  (`unreact` lists then DELETEs by id, since the GitHub API
+  requires the reaction id), `getCache` / `setCache` /
+  `isStale` / `lastSync` / `getConfig` / `setConfig`.
+- **`js/storage.js`** — 6 new methods on `LocalStorageProvider`:
+  `getPoolConfig`, `setPoolConfig`, `getPoolCache`,
+  `setPoolCache` (dedupes by id), `getReactions`,
+  `setReaction` (supports `null` to clear), and
+  `setPoolOrigin` (tags a local copy as "published to
+  <repo>"). New localStorage keys: `insightrecoder.pool-config.v1`,
+  `insightrecoder.pool-cache.v1`, `insightrecoder.pool-reactions.v1`.
+- **`js/insight-connections.js`** — `buildGraph` accepts a new
+  `opts.poolInspirations` argument. Pool nodes are appended
+  to the node list with `isPool: true`. A new
+  `inferCrossEdges` helper builds a union corpus of
+  local + pool nodes and adds cross-community edges at
+  cosine > 0.25 (kind='cross'). The existing 2-arg form is
+  unchanged for callers that don't pass `poolInspirations`.
+- **`js/app.js`** — new `/pool` route, 5th bottom-nav item
+  (Capture / Graph / Timeline / Pool / My), `renderPool` +
+  `bindPoolEvents` + `syncPool` + `togglePoolReaction` +
+  `savePoolToMy` + `formatRelative` helpers. Settings page
+  now has an "Insight Pool" sub-section with a connect form
+  / sync now / disconnect flow. Capture page shows a "Also
+  publish to <owner>/<repo>" checkbox when a pool is
+  configured. Graph view passes the pool cache to
+  `buildGraph`, renders pool nodes with a dashed border +
+  `borderWidth: 4`, and shows cross edges in dashed blue
+  with a legend entry. `/my` splits into "Local only" and
+  "Published to <repo>" sections. The graph side panel
+  handles pool ids (no delete button, shows author + repo).
+- **`js/export.js`** — `buildExportPayload` accepts a 4th
+  `{poolConfig, poolCache, poolReactions}` argument so the
+  JSON export carries the full pool state. Version bumped
+  to 0.7.0. The 4 `exportXxx` functions are unchanged in
+  behavior; they consume the same payload shape.
+- **`css/style.css`** — pool card, pool reaction buttons,
+  pool tag chips, capture-pool toggle, my-section split,
+  settings field + section-tag, graph legend "pool" +
+  "cross" dots, side-panel cross-edge kind.
+- **`README.md`** — new "Insight Pool" section + "Connecting
+  a pool" how-to + updated bottom-nav diagram (5 items).
+- **`e2e-v06.mjs`** — unchanged. **41/41 PASS.**
+- **`e2e-pool.mjs`** — new. **45/45 PASS.**
+
+### Edge cases handled
+- **No pool config**: `/pool` shows the "Connect" empty
+  state. No `api.github.com` calls until configured.
+- **Invalid PAT**: friendly toast + cache-preserving
+  fallback. `PoolAuthError` carries the GitHub message.
+- **Rate limit**: `PoolRateLimit.retryAfterSec` is read from
+  `x-ratelimit-reset`; UI shows "try again in N min".
+- **CORS / network**: `PoolNetworkError` surfaces as a
+  toast; local data is never lost.
+- **Empty pool**: "No pool inspirations yet" empty state.
+- **Token in URL**: never. Always `Authorization: token <PAT>`.
+
+### Out of scope (deferred to v0.8)
+- Comments / threaded discussion per inspiration
+- Pool-to-pool cross-posts
+- Web Crypto token encryption
+- Real-time updates (websockets / SSE)
 
 ## [0.6.0] - 2026-06-11
 

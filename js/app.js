@@ -26,6 +26,7 @@ import {
   exportJson, exportMarkdown, exportStandaloneHtml, exportGraphml,
   downloadBlob,
 } from './export.js';
+import { GitHubIssuePool, PoolAuthError, PoolRateLimit, PoolNotConfigured, PoolNetworkError } from './pool.js';
 
 const PROVIDER_STORAGE_KEY = 'insightrecoder.provider.v1';
 
@@ -35,6 +36,8 @@ const state = {
   voice: new VoiceInput(),
   ready: false,
   network: null,        // vis-network instance, kept across re-renders
+  pool: null,           // GitHubIssuePool instance, lazily created from storage config
+  poolConfig: null,     // last-known {owner, repo, token} (null when unconfigured)
 };
 
 // ---------- Util: safe HTML string escaping ----------
@@ -76,7 +79,11 @@ function toast(msg, kind) {
   toastTimer = setTimeout(() => t.classList.remove('toast--show'), 1800);
 }
 
-// ---------- Util: bottom nav (4 items: Capture / Graph / My / Settings) ----------
+// ---------- Util: bottom nav (5 items: Capture / Graph / Timeline / Pool / My) ----------
+// v0.7 adds the Pool item between Timeline and My. Settings is
+// intentionally not in the bottom bar (it lives at /settings via
+// the My page header link) to keep the bar at exactly 5 items
+// (5 × 60px = 300px, plus 60px safe area, fits a 360px viewport).
 function bottomNav(active) {
   return `
     <nav class="bottom-nav" role="navigation" aria-label="Main navigation">
@@ -91,6 +98,10 @@ function bottomNav(active) {
       <a class="bottom-nav__item ${active === 'timeline' ? 'is-active' : ''}" href="#/timeline" aria-label="Timeline">
         <span class="bottom-nav__icon" aria-hidden="true">📅</span>
         <span class="bottom-nav__label">Timeline</span>
+      </a>
+      <a class="bottom-nav__item ${active === 'pool' ? 'is-active' : ''}" href="#/pool" aria-label="Pool">
+        <span class="bottom-nav__icon" aria-hidden="true">🌐</span>
+        <span class="bottom-nav__label">Pool</span>
       </a>
       <a class="bottom-nav__item ${active === 'my' ? 'is-active' : ''}" href="#/my" aria-label="My">
         <span class="bottom-nav__icon" aria-hidden="true">📚</span>
@@ -110,6 +121,85 @@ function emptyState(icon, title, body, cta) {
       ${cta ? `<div class="empty__cta">${cta}</div>` : ''}
     </div>
   `;
+}
+
+// ============================================================
+// Pool helpers (v0.7)
+// ============================================================
+//
+// v0.7 layers an optional multi-user "Insight Pool" on top of
+// the v0.6.2 local-first store. The pool is a user-configured
+// public (or private) GitHub repo whose issues are readable
+// without auth and writeable with a fine-grained PAT. The
+// storage layer is the source of truth for the config; the
+// in-memory `state.pool` is a thin re-export that we recreate
+// on demand (e.g. after a Settings save).
+//
+// `getPoolInstance()` returns the current `GitHubIssuePool` or
+// `null` if no config is set. Callers should always check
+// `state.poolConfig` (or the return value) before calling any
+// network method.
+
+function getPoolInstance() {
+  if (state.pool) return state.pool;
+  const cfg = state.storage.getPoolConfig();
+  if (!cfg) {
+    state.poolConfig = null;
+    return null;
+  }
+  state.poolConfig = cfg;
+  state.pool = new GitHubIssuePool({ owner: cfg.owner, repo: cfg.repo, token: cfg.token });
+  return state.pool;
+}
+
+function resetPoolInstance() {
+  state.pool = null;
+  state.poolConfig = state.storage.getPoolConfig();
+}
+
+/**
+ * Apply the user's local reaction overrides to a pool
+ * inspiration. We do this in one place so the Pool tab, the
+ * graph, and the Settings view all agree on what the user's
+ * reaction is.
+ *
+ * @param {{ origin?: { number?: number } }|null|undefined} item
+ */
+function applyMyReaction(item) {
+  if (!item || !item.origin || !item.origin.number) return item;
+  const map = state.storage.getReactions();
+  const key = String(item.origin.number);
+  if (Object.prototype.hasOwnProperty.call(map, key)) {
+    item.myReaction = map[key] == null ? null : map[key];
+  } else {
+    item.myReaction = null;
+  }
+  return item;
+}
+
+/**
+ * Surface a friendly message for a Pool error. The UI calls
+ * this from `bindPoolEvents` and the Settings save handler.
+ * Returns the toast kind ('error' or 'warn').
+ */
+function poolErrorToast(err) {
+  if (!err) return 'warn';
+  if (err.name === 'PoolAuthError') {
+    toast('🔐 Pool auth failed — check your token in Settings', 'error');
+    return 'error';
+  }
+  if (err.name === 'PoolRateLimit') {
+    const sec = (err.retryAfterSec || 60);
+    const min = Math.max(1, Math.ceil(sec / 60));
+    toast(`⏳ GitHub rate limit reached — try again in ${min} min`, 'warn');
+    return 'warn';
+  }
+  if (err.name === 'PoolNotConfigured') {
+    toast('⚠️ Connect a pool in Settings first', 'warn');
+    return 'warn';
+  }
+  toast(`❌ Pool error: ${err.message || 'unknown'}`, 'error');
+  return 'error';
 }
 
 // ============================================================
@@ -220,6 +310,8 @@ function bindProfileEvents() {
 function renderCapture() {
   const all = state.storage.getInspirations();
   const voiceSupported = state.voice.isSupported();
+  const poolCfg = state.storage.getPoolConfig();
+  const hasPool = !!poolCfg;
   return `
     <section class="page page--capture">
       <header class="page__header">
@@ -244,6 +336,12 @@ function renderCapture() {
           <span class="capture-box__hint">⌘/Ctrl + Enter to save</span>
           <button type="button" id="capture-save" class="btn btn--primary capture-box__save" disabled>Save</button>
         </div>
+        ${hasPool ? `
+          <label class="capture-box__pool-toggle" title="Also publish to ${esc(poolCfg.owner)}/${esc(poolCfg.repo)}">
+            <input type="checkbox" id="capture-publish-pool" />
+            <span>📤 Also publish to <code>${esc(poolCfg.owner)}/${esc(poolCfg.repo)}</code></span>
+          </label>
+        ` : ''}
       </div>
 
       <div id="capture-suggestions" class="capture-suggestions" aria-live="polite"></div>
@@ -334,6 +432,35 @@ function bindCaptureEvents() {
     textarea.value = '';
     refreshSaveEnabled();
     showSuggestions(record);
+    // Pool publish (v0.7) — opt-in via the checkbox. We do this
+    // AFTER the local save so the user always has the local
+    // copy even if the publish fails.
+    const pubBox = document.getElementById('capture-publish-pool');
+    if (pubBox && pubBox.checked) {
+      const pool = getPoolInstance();
+      if (pool) {
+        pool.publish({ text, tags }).then((res) => {
+          if (res && res.number) {
+            // Patch the local record with _poolOrigin so /my can
+            // show it as "Published to <repo>".
+            const cfg = state.storage.getPoolConfig();
+            if (cfg) {
+              state.storage.setPoolOrigin(record.id, {
+                owner: cfg.owner,
+                repo: cfg.repo,
+                number: res.number,
+                htmlUrl: res.html_url,
+              });
+            }
+            toast(`📤 Published as #${res.number}`, 'success');
+          }
+        }).catch((err) => {
+          poolErrorToast(err);
+        });
+      } else {
+        toast('⚠️ Pool not configured — saved locally only', 'warn');
+      }
+    }
     // Refresh the recent list in place
     const recent = document.querySelector('.capture-recent');
     if (recent) {
@@ -443,7 +570,8 @@ function mountGraph() {
   }
   const inspirations = state.storage.getInspirations();
   const userLinks = state.storage.getLinks();
-  if (inspirations.length === 0) {
+  const poolCache = state.storage.getPoolCache().map(applyMyReaction);
+  if (inspirations.length === 0 && poolCache.length === 0) {
     container.innerHTML = emptyState('🕸️', 'No inspirations yet', 'Capture a few in #/capture and they will appear here.',
       `<a class="btn btn--primary" href="#/capture">Go to capture</a>`);
     const sub = document.getElementById('graph-subtitle');
@@ -452,7 +580,8 @@ function mountGraph() {
     if (legend) legend.innerHTML = '';
     return;
   }
-  const graph = buildGraph(inspirations, userLinks);
+  // v0.7 — include pool nodes + cross-community edges.
+  const graph = buildGraph(inspirations, userLinks, { poolInspirations: poolCache });
   const communityMap = detectCommunities(graph);  // { nodeId: communityId }
   const colors = colorizeCommunities(communityMap);
   // Compute K (number of distinct communities) for the stats line
@@ -482,12 +611,28 @@ function mountGraph() {
       n.color = { background: c.color, border: '#1a1a1a', highlight: { background: c.color, border: '#1a1a1a' } };
       n.community = cId;
     }
-    n.title = n.label || '';  // hover tooltip
+    // v0.7 — pool nodes get a thicker dark ring (vis-network
+    // `borderWidth` + dashed border) so they read as "not mine".
+    // Own-pool (local copy published to GitHub) keeps the
+    // community color but adds a small badge via the title.
+    if (n.isPool) {
+      n.shape = 'dot';
+      n.borderWidth = 4;
+      n.borderWidthSelected = 6;
+      n.color = Object.assign({}, n.color, { border: '#1a1a1a' });
+      n.shapeProperties = { borderDashes: [4, 3] };
+    }
+    n.title = (n.isPool ? '🌐 ' : '') + (n.label || '') + (n.isOwnPool ? ' (↗ published)' : '');
   }
   // Edge styling
   for (const e of graph.edges) {
     e.width = Math.max(1, Math.min(6, (e.score || 0) * 5));
-    e.color = { color: e.kind === 'pinned' ? '#1a1a1a' : '#9a9a9f', highlight: '#1a1a1a' };
+    if (e.kind === 'cross') {
+      e.color = { color: '#5b8def', highlight: '#1a1a1a' };
+      e.dashes = [4, 4];
+    } else {
+      e.color = { color: e.kind === 'pinned' ? '#1a1a1a' : '#9a9a9f', highlight: '#1a1a1a' };
+    }
   }
   // Wipe previous instance
   if (state.network) {
@@ -533,7 +678,9 @@ function mountGraph() {
     legend.innerHTML = items.map((i) => {
       const tagSuffix = i.topTag ? ` <span class="graph-legend__tag">#${esc(i.topTag)}</span>` : '';
       return `<span class="graph-legend__item"><span class="graph-legend__dot" style="background:${i.color}"></span>community ${i.cId + 1}${tagSuffix}</span>`;
-    }).join('');
+    }).join('') + (poolCache.length > 0
+      ? `<span class="graph-legend__item"><span class="graph-legend__dot graph-legend__dot--pool"></span>pool (${poolCache.length})</span><span class="graph-legend__item"><span class="graph-legend__dot graph-legend__dot--cross"></span>cross-community edge</span>`
+      : '');
   }
   // Click handler
   if (_graphClickListener) state.network.off('click', _graphClickListener);
@@ -552,25 +699,67 @@ function openGraphSidePanel(id) {
   const edgesEl = document.getElementById('graph-sidepanel-edges');
   const delBtn = document.getElementById('graph-sidepanel-delete');
   if (!panel) return;
-  const ins = state.storage.getInspiration(id);
+  // v0.7 — pool nodes live in the pool cache, not in the
+  // local inspirations list. Resolve them first.
+  const isPoolId = typeof id === 'string' && id.startsWith('pool-');
+  let ins = null;
+  if (isPoolId) {
+    const num = Number(id.slice('pool-'.length));
+    ins = state.storage.getPoolCache().find((x) => x && x.origin && Number(x.origin.number) === num) || null;
+  } else {
+    ins = state.storage.getInspiration(id);
+  }
   if (!ins) { panel.hidden = true; return; }
   panel.hidden = false;
   textEl.textContent = ins.text;
   const tags = (ins.tags || []).map((t) => '#' + t).join(' ');
-  metaEl.textContent = `${formatDate(ins.createdAt)}${ins.source === 'voice' ? ' · 🎤 voice' : ''}${tags ? ' · ' + tags : ''}`;
+  // For pool nodes, prefix the meta with the author + repo.
+  let prefix = '';
+  if (isPoolId) {
+    const author = (ins.author && ins.author.login) ? '@' + ins.author.login : '';
+    const repo = (ins.origin && ins.origin.owner && ins.origin.repo)
+      ? `${ins.origin.owner}/${ins.origin.repo}#${ins.origin.number}` : '';
+    prefix = `🌐 ${esc(author)}${author && repo ? ' · ' : ''}${esc(repo)} · `;
+  } else if (ins._poolOrigin) {
+    prefix = `↗ published to ${esc(ins._poolOrigin.owner)}/${esc(ins._poolOrigin.repo)}#${ins._poolOrigin.number} · `;
+  }
+  metaEl.textContent = `${prefix}${formatDate(ins.createdAt)}${ins.source === 'voice' ? ' · 🎤 voice' : ''}${tags ? ' · ' + tags : ''}`;
   // Connected inspirations
   const links = state.storage.getLinks().filter((l) => l.source === id || l.target === id);
-  if (links.length === 0) {
+  // v0.7 — also show the cross-community edges. The graph holds
+  // these in-memory (built by buildGraph); we walk the network
+  // instance to find them.
+  const allEdges = (state.network && typeof state.network.getConnectedEdges === 'function')
+    ? state.network.getConnectedEdges(id) : [];
+  const networkEdges = (state.network && state.network.body && state.network.body.edges)
+    ? allEdges.map((eid) => state.network.body.edges[eid]).filter(Boolean) : [];
+  if (links.length === 0 && networkEdges.length === 0) {
     edgesEl.innerHTML = '<li class="empty__body">No connections yet.</li>';
   } else {
-    edgesEl.innerHTML = links.map((l) => {
+    // Local pinned / inferred edges first
+    const local = links.map((l) => {
       const otherId = l.source === id ? l.target : l.source;
       const other = state.storage.getInspiration(otherId);
       const text = other ? esc((other.text || '').slice(0, 60) + ((other.text || '').length > 60 ? '…' : '')) : '(deleted)';
       return `<li><span class="graph-sidepanel__edge-kind graph-sidepanel__edge-kind--${l.kind === 'pinned' ? 'pinned' : 'inferred'}">${l.kind === 'pinned' ? '🔗' : '·'}</span> ${text} <span class="graph-sidepanel__edge-score">${(l.score || 0).toFixed(2)}</span></li>`;
-    }).join('');
+    });
+    const cross = networkEdges.filter((e) => e && e.kind === 'cross').map((e) => {
+      const otherId = e.from === id ? e.to : e.from;
+      const otherPool = state.storage.getPoolCache().find((x) => x.id === otherId);
+      const otherLocal = state.storage.getInspiration(otherId);
+      let text = '(unknown)';
+      if (otherPool) text = `🌐 ${esc((otherPool.text || '').slice(0, 50) + ((otherPool.text || '').length > 50 ? '…' : ''))}`;
+      else if (otherLocal) text = esc((otherLocal.text || '').slice(0, 60) + ((otherLocal.text || '').length > 60 ? '…' : ''));
+      return `<li><span class="graph-sidepanel__edge-kind graph-sidepanel__edge-kind--cross">·</span> ${text} <span class="graph-sidepanel__edge-score">${(e.score || 0).toFixed(2)}</span></li>`;
+    });
+    edgesEl.innerHTML = local.concat(cross).join('') || '<li class="empty__body">No connections yet.</li>';
   }
+  // Pool cards are not deletable from here (they live in the
+  // pool repo). Hide the delete button for pool nodes; keep it
+  // for the user's own local copies that were published (they
+  // can delete the local copy and the pool side stays intact).
   if (delBtn) {
+    delBtn.style.display = isPoolId ? 'none' : '';
     delBtn.onclick = () => {
       if (!window.confirm('Delete this inspiration? This cannot be undone.')) return;
       state.storage.deleteInspiration(id);
@@ -680,16 +869,290 @@ function renderTimelineContent(rawQuery) {
 }
 
 // ============================================================
+// Page: #/pool
+// ============================================================
+//
+// v0.7 list view for the user's connected GitHub Issues pool.
+// Three render paths:
+//   1. Not configured → "Connect" empty state with CTA → /settings#pool
+//   2. Configured but cache is empty → "No pool inspirations yet"
+//   3. Cache is populated → list of pool cards with reaction
+//      toggles, "Save to My Ideas", "Open on GitHub".
+function renderPool() {
+  const cfg = state.storage.getPoolConfig();
+  const cache = state.storage.getPoolCache().map(applyMyReaction);
+  const pool = getPoolInstance();
+  const subtitleText = cfg
+    ? `${cfg.owner}/${cfg.repo} · ${cache.length} cached${pool && pool.lastSync ? ' · synced ' + formatRelative(pool.lastSync) : ''}`
+    : 'Connect a GitHub repo to share inspirations with a community.';
+
+  if (!cfg) {
+    return `
+      <section class="page page--pool">
+        <header class="page__header">
+          <h1 class="page__title">Insight Pool</h1>
+          <p class="page__subtitle">${esc(subtitleText)}</p>
+        </header>
+        ${emptyState(
+          '🌐',
+          'No pool configured',
+          'Pick a GitHub repo (e.g. <code>octocat/Hello-World</code> for a quick test) and optionally add a personal access token with <code>issues: write</code> to publish and react.',
+          `<a class="btn btn--primary" href="#/settings#pool">Connect a pool</a>`
+        )}
+      </section>
+    ` + bottomNav('pool');
+  }
+
+  if (cache.length === 0) {
+    return `
+      <section class="page page--pool">
+        <header class="page__header">
+          <h1 class="page__title">Insight Pool</h1>
+          <p class="page__subtitle">${esc(subtitleText)}</p>
+        </header>
+        <div class="pool-toolbar">
+          <button type="button" class="btn btn--primary" id="pool-sync">Sync now</button>
+          <span class="pool-toolbar__hint">Fetches open issues from <code>${esc(cfg.owner)}/${esc(cfg.repo)}</code></span>
+        </div>
+        ${emptyState('📭', 'No pool inspirations yet', 'Open issues in this repo will show up here once you sync.')}
+      </section>
+    ` + bottomNav('pool');
+  }
+
+  return `
+    <section class="page page--pool">
+      <header class="page__header">
+        <h1 class="page__title">Insight Pool</h1>
+        <p class="page__subtitle">${esc(subtitleText)}</p>
+      </header>
+      <div class="pool-toolbar">
+        <button type="button" class="btn btn--ghost" id="pool-sync">🔄 Sync now</button>
+        <a class="link" href="#/settings#pool">⚙️ Pool settings</a>
+      </div>
+      <ol class="pool-list" id="pool-list">
+        ${cache.map(renderPoolCard).join('')}
+      </ol>
+    </section>
+  ` + bottomNav('pool');
+}
+
+function renderPoolCard(item) {
+  applyMyReaction(item);
+  const num = item.origin && item.origin.number;
+  const htmlUrl = item.origin && item.origin.htmlUrl;
+  const tags = (item.tags || []).slice(0, 5);
+  const my = item.myReaction;
+  const r = item.reactions || {};
+  const plus1 = Number(r['+1'] || 0);
+  const minus1 = Number(r['-1'] || 0);
+  return `
+    <li class="pool-card" data-pool-num="${esc(num)}">
+      <div class="pool-card__head">
+        <span class="pool-card__author">@${esc((item.author && item.author.login) || 'unknown')}</span>
+        <span class="pool-card__date">${esc(formatDate(item.createdAt))}</span>
+        ${htmlUrl ? `<a class="pool-card__open" href="${esc(htmlUrl)}" target="_blank" rel="noopener noreferrer">↗ Open on GitHub</a>` : ''}
+      </div>
+      <div class="pool-card__text">${esc(item.text || '(empty)')}</div>
+      ${tags.length ? `<div class="pool-card__tags">${tags.map((t) => `<span class="pool-card__tag">#${esc(t)}</span>`).join('')}</div>` : ''}
+      <div class="pool-card__reactions">
+        <button type="button" class="pool-reaction ${my === '+1' ? 'is-active' : ''}" data-react="${esc(num)}::+1" aria-label="Like (${plus1})">👍 <span class="pool-reaction__count">${plus1}</span></button>
+        <button type="button" class="pool-reaction ${my === '-1' ? 'is-active' : ''}" data-react="${esc(num)}::-1" aria-label="Dislike (${minus1})">👎 <span class="pool-reaction__count">${minus1}</span></button>
+        <button type="button" class="btn btn--ghost pool-card__save" data-save="${esc(num)}">⬇ Save to My Ideas</button>
+      </div>
+    </li>
+  `;
+}
+
+function bindPoolEvents() {
+  const syncBtn = document.getElementById('pool-sync');
+  if (syncBtn) syncBtn.addEventListener('click', () => syncPool({ silent: false }));
+
+  document.querySelectorAll('[data-react]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const raw = btn.getAttribute('data-react') || '';
+      const [numStr, content] = raw.split('::');
+      const num = Number(numStr);
+      if (!Number.isFinite(num) || !content) return;
+      togglePoolReaction(num, content);
+    });
+  });
+  document.querySelectorAll('[data-save]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const num = Number(btn.getAttribute('data-save'));
+      if (!Number.isFinite(num)) return;
+      savePoolToMy(num);
+    });
+  });
+}
+
+/**
+ * Sync the pool cache from GitHub. Called from the Pool tab
+ * "Sync now" button and the Capture "Push to pool" path. On
+ * error, the local cache is preserved; we only surface a toast.
+ */
+async function syncPool({ silent } = {}) {
+  const pool = getPoolInstance();
+  if (!pool) {
+    if (!silent) toast('⚠️ Connect a pool in Settings first', 'warn');
+    return null;
+  }
+  try {
+    const list = await pool.fetchAll();
+    state.storage.setPoolCache(list);
+    if (!silent) toast(`✅ Synced ${list.length} inspiration${list.length === 1 ? '' : 's'}`, 'success');
+    return list;
+  } catch (err) {
+    if (!silent) poolErrorToast(err);
+    return null;
+  }
+}
+
+/**
+ * Toggle the user's reaction. Updates the local override map
+ * first for snappy UI, then fires the API. On failure, reverts.
+ */
+async function togglePoolReaction(number, content) {
+  const pool = getPoolInstance();
+  if (!pool) { poolErrorToast({ name: 'PoolNotConfigured' }); return; }
+  const current = state.storage.getReactions()[String(number)] || null;
+  const next = (current === content) ? null : content;
+  // Optimistic update
+  state.storage.setReaction(number, next);
+  // Reflect in the cache for immediate re-render
+  const cache = state.storage.getPoolCache().map((it) => {
+    if (it && it.origin && Number(it.origin.number) === Number(number)) {
+      it.myReaction = next;
+    }
+    return it;
+  });
+  state.storage.setPoolCache(cache);
+  // Re-render the list (preserves scroll position via outer container)
+  const list = document.getElementById('pool-list');
+  if (list) list.innerHTML = cache.map(renderPoolCard).join('');
+  // Re-bind just the reaction buttons (cheap; <50 elements)
+  list && list.querySelectorAll('[data-react],[data-save]').forEach((btn) => {
+    if (btn.hasAttribute('data-react')) {
+      btn.addEventListener('click', () => {
+        const raw = btn.getAttribute('data-react') || '';
+        const [n, c] = raw.split('::');
+        togglePoolReaction(Number(n), c);
+      });
+    } else if (btn.hasAttribute('data-save')) {
+      btn.addEventListener('click', () => {
+        const n = Number(btn.getAttribute('data-save'));
+        savePoolToMy(n);
+      });
+    }
+  });
+
+  try {
+    if (current && next == null) {
+      await pool.unreact(number, current);
+    } else if (next) {
+      await pool.react(number, next);
+    }
+  } catch (err) {
+    // Revert
+    state.storage.setReaction(number, current);
+    const cache2 = state.storage.getPoolCache().map((it) => {
+      if (it && it.origin && Number(it.origin.number) === Number(number)) it.myReaction = current;
+      return it;
+    });
+    state.storage.setPoolCache(cache2);
+    const list2 = document.getElementById('pool-list');
+    if (list2) list2.innerHTML = cache2.map(renderPoolCard).join('');
+    poolErrorToast(err);
+  }
+}
+
+/**
+ * Copy a pool inspiration to the local store. The local copy
+ * carries `origin: {owner, repo, number, htmlUrl}` so the
+ * "Published to <repo>" filter on /my can show it.
+ */
+function savePoolToMy(number) {
+  const item = state.storage.getPoolCache().find((it) => it && it.origin && Number(it.origin.number) === Number(number));
+  if (!item) { toast('⚠️ Pool inspiration not found in cache — try syncing', 'warn'); return; }
+  // De-dupe: if there's already a local copy with the same origin, no-op.
+  const all = state.storage.getInspirations();
+  const dup = all.find((it) => it && it._poolOrigin && Number(it._poolOrigin.number) === Number(number));
+  if (dup) { toast('ℹ️ Already in My Ideas', 'warn'); return; }
+  try {
+    const rec = state.storage.addInspiration({
+      text: item.text || '',
+      tags: (item.tags || []).slice(),
+      source: 'text',
+    });
+    if (rec && rec.id) {
+      state.storage.setPoolOrigin(rec.id, item.origin);
+    }
+    toast('✅ Saved to My Ideas', 'success');
+  } catch (err) {
+    if (err && err.name === 'StorageFullError') {
+      toast('💾 Storage full — clear some data in Settings', 'error');
+      return;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Human-readable "synced Ns ago" string. Used in the pool
+ * subtitle. `null` lastSync → "never".
+ */
+function formatRelative(ts) {
+  if (!ts) return 'never';
+  const diff = Date.now() - ts;
+  if (diff < 0) return 'just now';
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const d = Math.floor(hr / 24);
+  return `${d}d ago`;
+}
+
+// ============================================================
 // Page: #/my
 // ============================================================
 function renderMy() {
   const all = state.storage.getInspirations();
   const total = all.length;
+  const poolCfg = state.storage.getPoolConfig();
+  // v0.7 — split into "Local only" vs "Published to <repo>".
+  // A record is "published" when it has a _poolOrigin marker.
+  const localOnly = all.filter((it) => !it || !it._poolOrigin);
+  const published = all.filter((it) => it && it._poolOrigin);
+  const renderItem = (it, withOrigin) => `
+    <li class="inspiration-card" data-id="${esc(it.id)}">
+      <div class="inspiration-card__text">${esc(it.text)}</div>
+      <div class="inspiration-card__meta">
+        <span>${formatDate(it.createdAt)}</span>${it.source === 'voice' ? '<span>· 🎤</span>' : ''}
+        ${withOrigin ? `<span class="inspiration-card__pool">↗ ${esc(it._poolOrigin.owner)}/${esc(it._poolOrigin.repo)}#${it._poolOrigin.number}</span>` : ''}
+        ${(it.tags || []).map((t) => `<span class="inspiration-card__tag">#${esc(t)}</span>`).join('')}
+      </div>
+      <div class="inspiration-card__actions">
+        ${withOrigin && it._poolOrigin && it._poolOrigin.htmlUrl
+          ? `<a class="btn btn--ghost" href="${esc(it._poolOrigin.htmlUrl)}" target="_blank" rel="noopener noreferrer">↗ Open</a>`
+          : ''}
+        <button type="button" class="btn btn--ghost" data-delete="${esc(it.id)}">Delete</button>
+      </div>
+    </li>
+  `;
+  const section = (title, items, withOrigin) => `
+    <h2 class="my-section__title">${esc(title)} <span class="my-section__count">${items.length}</span></h2>
+    ${items.length === 0
+      ? `<p class="empty__body">No ${title.toLowerCase()} yet.</p>`
+      : `<ol class="my-list__items">${items.map((it) => renderItem(it, withOrigin)).join('')}</ol>`
+    }
+  `;
   return `
     <section class="page page--my">
       <header class="page__header">
         <h1 class="page__title">My inspirations</h1>
-        <p class="page__subtitle">${total} total</p>
+        <p class="page__subtitle">${total} total · <a class="link" href="#/settings">Settings</a></p>
       </header>
 
       <div class="my-export">
@@ -702,18 +1165,8 @@ function renderMy() {
       <div id="my-list" class="my-list">
         ${total === 0
           ? emptyState('📭', 'No inspirations yet', 'Capture a few in the capture box first.', `<a class="btn btn--primary" href="#/capture">Go to capture</a>`)
-          : `<ol class="my-list__items">${all.map((it) => `
-            <li class="inspiration-card" data-id="${esc(it.id)}">
-              <div class="inspiration-card__text">${esc(it.text)}</div>
-              <div class="inspiration-card__meta">
-                <span>${formatDate(it.createdAt)}</span>${it.source === 'voice' ? '<span>· 🎤</span>' : ''}
-                ${(it.tags || []).map((t) => `<span class="inspiration-card__tag">#${esc(t)}</span>`).join('')}
-              </div>
-              <div class="inspiration-card__actions">
-                <button type="button" class="btn btn--ghost" data-delete="${esc(it.id)}">Delete</button>
-              </div>
-            </li>
-          `).join('')}</ol>`
+          : section('Local only', localOnly, false) +
+            (poolCfg ? section(`Published to ${poolCfg.owner}/${poolCfg.repo}`, published, true) : '')
         }
       </div>
     </section>
@@ -737,7 +1190,12 @@ function bindMyEvents() {
       const payload = buildExportPayload(
         state.storage.getInspirations(),
         state.storage.getLinks(),
-        state.storage.getProfile()
+        state.storage.getProfile(),
+        {
+          poolConfig: state.storage.getPoolConfig(),
+          poolCache: state.storage.getPoolCache(),
+          poolReactions: state.storage.getReactions(),
+        }
       );
       let res;
       try {
@@ -760,6 +1218,92 @@ function bindMyEvents() {
 // ============================================================
 // Page: #/settings
 // ============================================================
+function renderSettingsPoolSection() {
+  const cfg = state.storage.getPoolConfig();
+  if (!cfg) {
+    return `
+      <div class="settings__section" id="pool">
+        <h2 class="settings__section-title">Insight Pool <span class="settings__section-tag">v0.7 · optional</span></h2>
+        <p class="empty__body">Share inspirations with a community by connecting a GitHub Issues repo. To browse a <em>public</em> repo you only need <code>owner/repo</code>. To publish and react you also need a <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener noreferrer">fine-grained PAT</a> with <code>issues: write</code> on that repo.</p>
+        <form id="pool-form" class="settings__group" novalidate>
+          <label class="settings__field">
+            <span class="form__label">Owner</span>
+            <input class="form__input" name="owner" type="text" placeholder="e.g. octocat" required />
+          </label>
+          <label class="settings__field">
+            <span class="form__label">Repo</span>
+            <input class="form__input" name="repo" type="text" placeholder="e.g. Hello-World" required />
+          </label>
+          <label class="settings__field">
+            <span class="form__label">Personal access token <span class="form__hint">(optional · for publish + react)</span></span>
+            <input class="form__input" name="token" type="password" placeholder="github_pat_..." autocomplete="off" />
+          </label>
+          <div class="settings__row">
+            <button type="submit" class="btn btn--primary">Connect pool</button>
+          </div>
+        </form>
+      </div>
+    `;
+  }
+  return `
+    <div class="settings__section" id="pool">
+      <h2 class="settings__section-title">Insight Pool <span class="settings__section-tag">v0.7 · connected</span></h2>
+      <p class="empty__body">Connected to <code>${esc(cfg.owner)}/${esc(cfg.repo)}</code>${cfg.token ? ' · token saved (write access enabled)' : ' · read-only (no token saved)'}.</p>
+      <div class="settings__row">
+        <button type="button" class="btn btn--ghost" id="pool-sync-now">🔄 Sync now</button>
+        <a class="link" href="#/pool">Open pool →</a>
+        <button type="button" class="btn btn--danger" id="pool-disconnect">Disconnect</button>
+      </div>
+    </div>
+  `;
+}
+
+function bindSettingsPoolEvents() {
+  const form = document.getElementById('pool-form');
+  if (form) {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const owner = String(fd.get('owner') || '').trim();
+      const repo = String(fd.get('repo') || '').trim();
+      const token = String(fd.get('token') || '').trim() || null;
+      if (!owner || !repo) {
+        toast('⚠️ Owner and repo are required', 'warn');
+        return;
+      }
+      try {
+        state.storage.setPoolConfig({ owner, repo, token });
+      } catch (err) {
+        toast('❌ Could not save pool config: ' + (err && err.message), 'error');
+        return;
+      }
+      resetPoolInstance();
+      toast('✅ Pool connected · syncing…', 'success');
+      // Fire-and-forget initial sync; the user gets a toast on
+      // success or failure without leaving the page.
+      syncPool({ silent: false }).then(() => {
+        if (typeof render === 'function') render();
+      });
+    });
+  }
+  const syncNow = document.getElementById('pool-sync-now');
+  if (syncNow) {
+    syncNow.addEventListener('click', () => syncPool({ silent: false }));
+  }
+  const disconnect = document.getElementById('pool-disconnect');
+  if (disconnect) {
+    disconnect.addEventListener('click', () => {
+      if (!window.confirm('Disconnect the pool? Your local inspirations are kept; only the pool config is removed.')) return;
+      try {
+        window.localStorage.removeItem('insightrecoder.pool-config.v1');
+      } catch (_) {}
+      resetPoolInstance();
+      toast('✅ Pool disconnected', 'success');
+      render();
+    });
+  }
+}
+
 function renderSettings() {
   const cfg = loadProviderSettings();
   const type = cfg.type || 'mock';
@@ -800,9 +1344,11 @@ function renderSettings() {
         <button type="button" class="btn btn--danger" id="wipe-data">🗑️ Clear all data</button>
       </div>
 
+      ${renderSettingsPoolSection()}
+
       <div class="settings__section">
         <h2 class="settings__section-title">About</h2>
-        <p class="empty__body">InsightRecoder v0.6 · pure-frontend · local-first · no tracking.</p>
+        <p class="empty__body">InsightRecoder v0.7 · pure-frontend · local-first · optional GitHub Pool.</p>
       </div>
     </section>
   `;
@@ -845,6 +1391,7 @@ function bindSettingsEvents() {
       location.hash = '#/capture';
     });
   }
+  bindSettingsPoolEvents();
 }
 
 function loadProviderSettings() {
@@ -908,6 +1455,9 @@ function render() {
   } else if (route === '/timeline') {
     app.innerHTML = renderTimeline() + bottomNav('timeline');
     bindTimelineEvents();
+  } else if (route === '/pool') {
+    app.innerHTML = renderPool();
+    bindPoolEvents();
   } else if (route === '/my') {
     app.innerHTML = renderMy() + bottomNav('my');
     bindMyEvents();

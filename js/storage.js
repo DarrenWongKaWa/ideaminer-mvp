@@ -49,6 +49,10 @@ const KEYS = {
   profile:       'insightrecoder.profile.v1',
   inspirations:  'insightrecoder.inspirations.v1',
   links:         'insightrecoder.links.v1',
+  // v0.7 — Insight Pool (GitHub-Issues-backed multi-user layer)
+  poolConfig:    'insightrecoder.pool-config.v1',
+  poolCache:     'insightrecoder.pool-cache.v1',
+  poolReactions: 'insightrecoder.pool-reactions.v1',
   // Legacy v0.5.x keys — read once on boot for one-shot migration,
   // then deleted. The v0.6.0 migration only handled user-ideas, which
   // is why users who had saved/favorite ideas (ideaminer.saved.v1) or
@@ -80,6 +84,15 @@ export class Storage {
 
   // Migration (legacy)
   migrateLegacyUserIdeas() { throw new Error('not implemented'); }
+
+  // Pool (v0.7 — optional GitHub-Issues-backed multi-user layer)
+  getPoolConfig() { throw new Error('not implemented'); }
+  setPoolConfig(_cfg) { throw new Error('not implemented'); }
+  getPoolCache() { throw new Error('not implemented'); }
+  setPoolCache(_list) { throw new Error('not implemented'); }
+  getReactions() { throw new Error('not implemented'); }
+  setReaction(_number, _content) { throw new Error('not implemented'); }
+  setPoolOrigin(_id, _origin) { throw new Error('not implemented'); }
 }
 
 export class LocalStorageProvider extends Storage {
@@ -99,6 +112,9 @@ export class LocalStorageProvider extends Storage {
       profile: null,
       inspirations: [],
       links: [],
+      poolConfig: null,
+      poolCache: [],
+      poolReactions: {},
     };
   }
 
@@ -162,9 +178,12 @@ export class LocalStorageProvider extends Storage {
   }
 
   _memKey(lsKey) {
-    if (lsKey === KEYS.profile)      return 'profile';
-    if (lsKey === KEYS.inspirations) return 'inspirations';
-    if (lsKey === KEYS.links)        return 'links';
+    if (lsKey === KEYS.profile)       return 'profile';
+    if (lsKey === KEYS.inspirations)  return 'inspirations';
+    if (lsKey === KEYS.links)         return 'links';
+    if (lsKey === KEYS.poolConfig)    return 'poolConfig';
+    if (lsKey === KEYS.poolCache)     return 'poolCache';
+    if (lsKey === KEYS.poolReactions) return 'poolReactions';
     return null;
   }
 
@@ -360,6 +379,138 @@ export class LocalStorageProvider extends Storage {
   /** @returns {Link[]} subset with kind='pinned' */
   getPinnedLinks() {
     return this.getLinks().filter((l) => l.kind === 'pinned');
+  }
+
+  // ---- Pool (v0.7) ----
+  /**
+   * The pool config: which GitHub repo to use as the multi-user
+   * "Insight Pool" and (optionally) the PAT to publish / react
+   * with. The token is stored in plaintext in localStorage —
+   * acceptable for an MVP. v0.8 may wrap this with Web Crypto
+   * (user-supplied passphrase). Returning `null` (not `{}`)
+   * lets the UI distinguish "never configured" from
+   * "configured and then cleared".
+   *
+   * @returns {{ owner: string, repo: string, token: string|null }|null}
+   */
+  getPoolConfig() {
+    const v = this._read(KEYS.poolConfig, null);
+    if (!v || typeof v !== 'object') return null;
+    if (!v.owner || !v.repo) return null;
+    return {
+      owner: String(v.owner),
+      repo: String(v.repo),
+      token: v.token ? String(v.token) : null,
+    };
+  }
+
+  /**
+   * @param {{ owner: string, repo: string, token?: string|null }} cfg
+   */
+  setPoolConfig(cfg) {
+    if (!cfg || !cfg.owner || !cfg.repo) {
+      throw new Error('setPoolConfig: owner and repo are required');
+    }
+    const out = {
+      owner: String(cfg.owner).trim(),
+      repo:  String(cfg.repo).trim(),
+      token: cfg.token ? String(cfg.token) : null,
+    };
+    this._write(KEYS.poolConfig, out);
+  }
+
+  /**
+   * @returns {Array<{ id: string, text: string, tags: string[],
+   *   source: 'pool', origin: object, author: object,
+   *   reactions: object, myReaction: string|null, isLocal: boolean }>}
+   */
+  getPoolCache() {
+    const v = this._read(KEYS.poolCache, []);
+    return Array.isArray(v) ? v : [];
+  }
+
+  /**
+   * Replace the pool cache. Dedupes by `.id` (which is
+   * `pool-<issue number>`) — if the same issue appears twice,
+   * the last one wins. Mirrors to the in-memory cache so the
+   * GitHubIssuePool instance can pick it up on next mount.
+   *
+   * @param {Array<object>} list
+   */
+  setPoolCache(list) {
+    const arr = Array.isArray(list) ? list : [];
+    const dedup = new Map();
+    for (const it of arr) {
+      if (!it || !it.id) continue;
+      dedup.set(it.id, it);
+    }
+    this._write(KEYS.poolCache, Array.from(dedup.values()));
+  }
+
+  /**
+   * Local override map of `issueNumber -> reaction content`. The
+   * user can react even when the GitHub issue is briefly
+   * unavailable (rate limit, network) and the UI stays snappy
+   * because the toggle reads from this map first.
+   *
+   * @returns {Record<string, '+1'|'-1'|null>}
+   */
+  getReactions() {
+    const v = this._read(KEYS.poolReactions, {});
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+    return v;
+  }
+
+  /**
+   * @param {number|string} number  issue number (string-coerced for map key)
+   * @param {'+1'|'-1'|'laugh'|'hooray'|'confused'|'heart'|'rocket'|'eyes'|null} content
+   */
+  setReaction(number, content) {
+    const key = String(Number(number) || 0);
+    if (key === '0') return;  // invalid number
+    const map = this.getReactions();
+    if (content == null) {
+      map[key] = null;
+    } else {
+      map[key] = String(content);
+    }
+    this._write(KEYS.poolReactions, map);
+  }
+
+  /**
+   * Tag an existing local inspiration with a `_poolOrigin`
+   * marker so the /my view can show "Published to <repo>"
+   * separately. We add this field in-place to keep the
+   * existing Inspiration shape backward compatible.
+   *
+   * @param {string} id
+   * @param {{ owner: string, repo: string, number: number, htmlUrl: string }|null} origin
+   * @returns {boolean} true if the inspiration was updated
+   */
+  setPoolOrigin(id, origin) {
+    if (!id) return false;
+    const list = this.getInspirations();
+    const idx = list.findIndex((x) => x && x.id === id);
+    if (idx < 0) return false;
+    const next = { ...list[idx] };
+    if (origin == null) {
+      delete next._poolOrigin;
+    } else {
+      next._poolOrigin = {
+        owner: String(origin.owner || ''),
+        repo: String(origin.repo || ''),
+        number: Number(origin.number) || 0,
+        htmlUrl: String(origin.htmlUrl || ''),
+      };
+    }
+    list[idx] = next;
+    try {
+      this._write(KEYS.inspirations, list);
+    } catch (err) {
+      if (err && err.name === 'StorageFullError') throw err;
+      throw err;
+    }
+    return true;
   }
 
   // ---- Migration ----
