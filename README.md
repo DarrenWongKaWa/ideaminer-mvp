@@ -43,7 +43,7 @@ network call is the vis-network CDN load.
 
 ## 🎬 Live Demo
 
-> **https://darrenwongkawa.github.io/insightrecoder/**
+> **https://darrenwongkawa.github.io/ideaminer-mvp/**
 
 The app is automatically redeployed on every push to `main` via
 `.github/workflows/deploy.yml`.
@@ -55,8 +55,8 @@ The app is automatically redeployed on every push to `main` via
 No dependencies. Spin up a local static server:
 
 ```bash
-git clone https://github.com/DarrenWongKaWa/insightrecoder.git
-cd insightrecoder
+git clone https://github.com/DarrenWongKaWa/ideaminer-mvp.git
+cd ideaminer-mvp
 python3 -m http.server 8080
 # then open http://localhost:8080 in your browser
 ```
